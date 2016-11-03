@@ -1,11 +1,12 @@
 #!/usr/bin/python2.7
 # -*- coding: utf-8 -*-
 
-import csv;
-import os;
-import re;
-import sys;
-import urllib2;
+import csv
+import logging
+import os
+import re
+import sys
+import urllib2
 
 # The base class
 class DataFetcher(object):
@@ -40,7 +41,7 @@ class NeteaseFetcher(DataFetcher):
     # fetch the raw data
     self._FetchFromSources(stock_code, data_sources)
     # process and calculate some derived data
-    self._RefineData()
+    self._RefineData(stock_code)
 
   def _FetchFromSources(self, stock_code, data_sources):
     for page_name in self._data_pages:
@@ -49,12 +50,19 @@ class NeteaseFetcher(DataFetcher):
       self._FetchUrl(stock_code, page_name, page_url)
 
   def _FetchUrl(self, stock_code, page_name, page_url):
-    print 'Fetching', page_name, 'for', stock_code, 'at', page_url
-    response = urllib2.urlopen(page_url)
-    content = response.read()
+    logging.info('Fetching %s for %s at %s', page_name, stock_code, page_url)
+    response = urllib2.urlopen(page_url, timeout=15)  # 15 seconds timeout
+    try:
+      content = response.read()
+    except URLError, e:
+      if hasattr(e, 'code'):  # HTTPError
+        logging.error('Http error %d for url: %s', e.code, page_url)
+      elif hasattr(e, 'reason'):
+        logging.error('Url error: %s, with reason %s', page_url, str(e.reason))
+      return
 
     filename = '%s.%s.csv' % (stock_code, page_name)
-    print 'Saving', page_name, 'to', filename
+    logging.info('Saving %s to %s', page_name, filename)
     f = open(os.path.join(self._directory, filename), 'w')
     f.write(content)
     f.close()
@@ -62,8 +70,19 @@ class NeteaseFetcher(DataFetcher):
   def _SetupDataSources(self, stock_code):
     return {}
 
-  def _RefineData(self):
-    pass
+  def _RefineData(self, stock_code):
+    # revenue from main business
+    datafile = os.path.join(self._directory, '%s.main_metrics.csv' % stock_code)
+    reader = csv.DictReader(open(datafile))
+    seasons = list(reader.fieldnames)
+    seasons.sort(reverse=True)  # from latest
+    # netease use gbk
+    column_key = u'报告日期'.encode('GBK')
+    row_name = u'主营业务收入(万元)'.encode('GBK')
+    for row in reader:
+      if row[column_key] == row_name:
+        print row
+        break
 
 
 # Netease per season data fetcher
@@ -86,10 +105,11 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
 
 
 def main():
+  logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   stock_code = '000977'
   fetcher = NeteaseSeasonFetcher(directory)
-  print 'Fetching', stock_code
+  logging.info('Fetching %s', stock_code)
   fetcher.Fetch(stock_code)
 
 if __name__ == "__main__":
