@@ -1,12 +1,18 @@
 #!/usr/bin/python2.7
 # -*- coding: utf-8 -*-
 
+import argparse
 import csv
 import logging
 import os
 import re
 import sys
 import urllib2
+
+argument_parser = argparse.ArgumentParser()
+argument_parser.add_argument('--skip_fetching_url', default=False, action='store_true',
+    help='Whether to skip fetching raw data from url.')
+FLAGS = None
 
 # The base class
 class DataFetcher(object):
@@ -44,6 +50,9 @@ class NeteaseFetcher(DataFetcher):
     self._RefineData(stock_code)
 
   def _FetchFromSources(self, stock_code, data_sources):
+    if FLAGS.skip_fetching_url:
+      return
+    logging.info('Fetching %s ...', stock_code)
     for page_name in self._data_pages:
       page_url = data_sources.get(page_name)
       assert page_url
@@ -71,18 +80,42 @@ class NeteaseFetcher(DataFetcher):
     return {}
 
   def _RefineData(self, stock_code):
+    logging.info('Refining %s ...', stock_code)
     # revenue from main business
     datafile = os.path.join(self._directory, '%s.main_metrics.csv' % stock_code)
     reader = csv.DictReader(open(datafile))
     seasons = list(reader.fieldnames)
-    seasons.sort(reverse=True)  # from latest
+    seasons = seasons[1:]  # keep only the dates
+    seasons.sort(reverse=True)  # from the latest season
     # netease use gbk
-    column_key = u'报告日期'.encode('GBK')
-    row_name = u'主营业务收入(万元)'.encode('GBK')
+    metrics_column_name_gbk = u'报告日期'.encode('GBK')
+    metrics_names = [
+        u'主营业务收入(万元)',
+    ]
+    metrics_names_gbk = [m.encode('GBK') for m in metrics_names]
+    refined_metrics_data = []  # [metrics_name, value for each season]
     for row in reader:
-      if row[column_key] == row_name:
-        print row
-        break
+      metrics_name = row[metrics_column_name_gbk]
+      if not metrics_name in metrics_names_gbk:
+        continue
+
+      # find a metics row
+      metrics_name_utf8 = metrics_name.decode('GBK').encode('UTF8')
+      metrics_data = [float(row[s]) if re.match(r'^\d+(\.\d+)?$', row[s]) else None for s in seasons]
+      size = len(metrics_data)
+      growth_data = [None] * size
+      for i in range(size):
+        last_year = i + 4
+        if metrics_data[i] and last_year < size and metrics_data[last_year]:
+          growth_data[i] = (metrics_data[i] / metrics_data[last_year] - 1.0) * 100.0
+      # append row to refined data
+      refined_metrics_data.append([metrics_name_utf8] + metrics_data)
+      refined_metrics_data.append([metrics_name_utf8 + '_growth'] + growth_data)
+
+    writer = csv.writer(open(os.path.join(self._directory, '%s.refined.csv' % stock_code), 'w'))
+    writer.writerow([u'指标'.encode('UTF8')] + seasons)  # header
+    writer.writerows(refined_metrics_data)
+    # print refined_metrics_data
 
 
 # Netease per season data fetcher
@@ -105,11 +138,13 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
 
 
 def main():
+  global FLAGS
+  FLAGS = argument_parser.parse_args()
+
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   stock_code = '000977'
   fetcher = NeteaseSeasonFetcher(directory)
-  logging.info('Fetching %s', stock_code)
   fetcher.Fetch(stock_code)
 
 if __name__ == "__main__":
