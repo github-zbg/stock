@@ -81,16 +81,20 @@ class NeteaseFetcher(DataFetcher):
 
   def _RefineData(self, stock_code):
     logging.info('Refining %s ...', stock_code)
+    max_seasons = 12 * 4  # limit to the latest 12 years
     # revenue from main business
     datafile = os.path.join(self._directory, '%s.main_metrics.csv' % stock_code)
     reader = csv.DictReader(open(datafile))
     seasons = list(reader.fieldnames)
     seasons = seasons[1:]  # keep only the dates
     seasons.sort(reverse=True)  # from the latest season
+    if len(seasons) > max_seasons:
+      seasons = seasons[:max_seasons]
     # netease use gbk
     metrics_column_name_gbk = u'报告日期'.encode('GBK')
     metrics_names = [
         u'主营业务收入(万元)',
+        u'经营活动产生的现金流量净额(万元)',
     ]
     metrics_names_gbk = [m.encode('GBK') for m in metrics_names]
     refined_metrics_data = []  # [metrics_name, value for each season]
@@ -101,13 +105,13 @@ class NeteaseFetcher(DataFetcher):
 
       # find a metics row
       metrics_name_utf8 = metrics_name.decode('GBK').encode('UTF8')
-      metrics_data = [float(row[s]) if re.match(r'^\d+(\.\d+)?$', row[s]) else None for s in seasons]
+      metrics_data = [float(row[s]) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else None for s in seasons]
       size = len(metrics_data)
       growth_data = [None] * size
       for i in range(size):
         last_year = i + 4
         if metrics_data[i] and last_year < size and metrics_data[last_year]:
-          growth_data[i] = (metrics_data[i] / metrics_data[last_year] - 1.0) * 100.0
+          growth_data[i] = (metrics_data[i] - metrics_data[last_year]) / abs(metrics_data[last_year]) * 100.0
       # append row to refined data
       refined_metrics_data.append([metrics_name_utf8] + metrics_data)
       refined_metrics_data.append([metrics_name_utf8 + '_growth'] + growth_data)
