@@ -82,30 +82,20 @@ class NeteaseFetcher(DataFetcher):
   def _RefineData(self, stock_code):
     logging.info('Refining %s ...', stock_code)
     max_seasons = 12 * 4  # limit to the latest 12 years
-    # revenue from main business
-    datafile = os.path.join(self._directory, '%s.main_metrics.csv' % stock_code)
-    reader = csv.DictReader(open(datafile))
-    seasons = list(reader.fieldnames)
-    seasons = seasons[1:]  # keep only the dates
+    # {season -> {metrics -> value} }
+    full_raw_data = self._LoadFullRawData(stock_code, max_seasons)
+    seasons = full_raw_data.keys()
     seasons.sort(reverse=True)  # from the latest season
-    if len(seasons) > max_seasons:
-      seasons = seasons[:max_seasons]
-    # netease use gbk
-    metrics_column_name_gbk = u'报告日期'.encode('GBK')
-    metrics_names = [
-        u'主营业务收入(万元)',
-        u'经营活动产生的现金流量净额(万元)',
-    ]
-    metrics_names_gbk = [m.encode('GBK') for m in metrics_names]
-    refined_metrics_data = []  # [metrics_name, value for each season]
-    for row in reader:
-      metrics_name = row[metrics_column_name_gbk]
-      if not metrics_name in metrics_names_gbk:
-        continue
 
-      # find a metics row
-      metrics_name_utf8 = metrics_name.decode('GBK').encode('UTF8')
-      metrics_data = [float(row[s]) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else None for s in seasons]
+    metrics_names = [
+        u'主营业务收入(万元)@main_metrics',
+        # u'经营活动产生的现金流量净额(万元)',
+    ]
+
+    refined_metrics_data = []  # [metrics_name, value for each season]
+    for metrics_name in metrics_names:
+      metrics_name = metrics_name.encode('UTF8')
+      metrics_data = [full_raw_data[s].get(metrics_name) for s in seasons]
       size = len(metrics_data)
       growth_data = [None] * size
       for i in range(size):
@@ -113,13 +103,41 @@ class NeteaseFetcher(DataFetcher):
         if metrics_data[i] and last_year < size and metrics_data[last_year]:
           growth_data[i] = (metrics_data[i] - metrics_data[last_year]) / abs(metrics_data[last_year]) * 100.0
       # append row to refined data
-      refined_metrics_data.append([metrics_name_utf8] + metrics_data)
-      refined_metrics_data.append([metrics_name_utf8 + '_growth'] + growth_data)
+      refined_name = metrics_name.split('@')[0]
+      refined_metrics_data.append([refined_name] + metrics_data)
+      refined_metrics_data.append([refined_name + '_growth'] + growth_data)
 
     writer = csv.writer(open(os.path.join(self._directory, '%s.refined.csv' % stock_code), 'w'))
     writer.writerow([u'指标'.encode('UTF8')] + seasons)  # header
     writer.writerows(refined_metrics_data)
-    # print refined_metrics_data
+
+  def _LoadFullRawData(self, stock_code, max_seasons):
+    full_data = {}  # {season -> {metrics -> value} }
+    for page in self._data_pages:
+      self._LoadPage(page, stock_code, max_seasons, full_data)
+    return full_data
+
+  def _LoadPage(self, page, stock_code, max_seasons, full_data):
+    datafile = os.path.join(self._directory, '%s.%s.csv' % (stock_code, page))
+    reader = csv.DictReader(open(datafile))
+    seasons = list(reader.fieldnames)[1:]  # keep only the seasons
+    seasons = [s for s in seasons if len(s.strip()) > 0]
+    seasons.sort(reverse=True)  # from the latest season
+    if len(seasons) > max_seasons:
+      seasons = seasons[:max_seasons]
+    # netease use gbk
+    metrics_column_name_gbk = list(reader.fieldnames)[0]
+    for row in reader:
+      metrics_name = row[metrics_column_name_gbk]
+      # differentiate metrics in different pages.
+      metrics_name = '%s@%s' % (metrics_name.decode('GBK').encode('UTF8'), page)
+      for season in seasons:
+        per_season_data = full_data.setdefault(season, {})
+        value = None
+        value_string = row.get(season)
+        if value_string and re.match(r'^-?\d+(\.\d+)?$', value_string):
+          value = float(value_string)
+        per_season_data.update({metrics_name: value})
 
 
 # Netease per season data fetcher
