@@ -10,8 +10,10 @@ import sys
 import urllib2
 
 argument_parser = argparse.ArgumentParser()
-argument_parser.add_argument('--skip_fetching_url', default=False, action='store_true',
-    help='Whether to skip fetching raw data from url.')
+argument_parser.add_argument('--skip_fetching_data', default=False, action='store_true',
+    help='Whether to totally skip fetching raw data from url.')
+argument_parser.add_argument('--force_refetch', default=False, action='store_true',
+    help='If true, always refetch the data even if it already exists.')
 FLAGS = None
 
 # The base class
@@ -50,7 +52,7 @@ class NeteaseFetcher(DataFetcher):
     self._RefineData(stock_code)
 
   def _FetchFromSources(self, stock_code, data_sources):
-    if FLAGS.skip_fetching_url:
+    if FLAGS.skip_fetching_data:
       return
     logging.info('Fetching %s ...', stock_code)
     for page_name in self._data_pages:
@@ -59,6 +61,12 @@ class NeteaseFetcher(DataFetcher):
       self._FetchUrl(stock_code, page_name, page_url)
 
   def _FetchUrl(self, stock_code, page_name, page_url):
+    filename = '%s.%s.csv' % (stock_code, page_name)
+    full_filepath = os.path.join(self._directory, filename)
+    if not FLAGS.force_refetch and os.path.exists(full_filepath):
+      logging.info('%s exists. Skip fetching %s for %s', full_filepath, page_name, stock_code)
+      return
+
     logging.info('Fetching %s for %s at %s', page_name, stock_code, page_url)
     response = urllib2.urlopen(page_url, timeout=15)  # 15 seconds timeout
     try:
@@ -70,9 +78,8 @@ class NeteaseFetcher(DataFetcher):
         logging.error('Url error: %s, with reason %s', page_url, str(e.reason))
       return
 
-    filename = '%s.%s.csv' % (stock_code, page_name)
     logging.info('Saving %s to %s', page_name, filename)
-    f = open(os.path.join(self._directory, filename), 'w')
+    f = open(full_filepath, 'w')
     f.write(content)
     f.close()
 

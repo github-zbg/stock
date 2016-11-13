@@ -13,6 +13,8 @@ import sys
 argument_parser = argparse.ArgumentParser()
 argument_parser.add_argument('--insight_date', default='latest',
     help='The time to do insights: YYYY-03-31, YYYY-06-30, YYYY-09-30, YYYY-12-31 or latest.')
+argument_parser.add_argument('--insight_output', default='',
+    help='The output of insight data.')
 FLAGS = None
 
 # Calculate insights for each stock
@@ -35,56 +37,93 @@ class DataInsights(object):
         u'主营业务收入(万元)_growth'.encode('UTF8'),
     ]
 
-    refined_metrics_data = []  # [metrics_name, value for each season]
+    # column -> value
+    insight_data = {
+        'Season': FLAGS.insight_date,
+    }
     for row in reader:
       metrics_name = row[metrics_column_name]
       if not metrics_name in metrics_names:
         continue
 
-      # find a metics row
+      # convert the matrix row into floats
       metrics_data = [float(row[s]) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else None for s in seasons]
-      self._DoRevenueGrowthStats(metrics_data, seasons)
+      revenue_stats = self._DoRevenueGrowthStats(stock_code, metrics_data, seasons)
+      insight_data.update(revenue_stats)
 
-  def _DoRevenueGrowthStats(self, metrics_data, seasons):
+    print insight_data
+    return insight_data
+
+  def _DoRevenueGrowthStats(self, stock_code, metrics_data, seasons):
     assert len(metrics_data) == len(seasons)
+
+    # stats column -> value
+    result = {
+        '2year_revenue_growth_mean': None,
+        '2year_revenue_growth_lower': None,
+        '2year_revenue_growth_upper': None,
+        '3year_revenue_growth_mean': None,
+        '3year_revenue_growth_lower': None,
+        '3year_revenue_growth_upper': None,
+    }
+
     date_index = self._GetInsightDate(seasons)
     if date_index < 0:
-      return
-    for i in range(4):  # calcuate 4 seasons(1 year)
-      if date_index + i >= len(seasons):
-        logging.info('No data for previous %d of %s', i, seasons[date_index])
-        break
+      logging.warning('%s has no data for season %s.', stock_code, FLAGS.insight_date)
+      return result
+
+    if date_index + 8 >= len(seasons):
+      logging.info('%s has no enough data for 2 years revenue growth CI till %s',
+          stock_code, FLAGS.insight_date)
+    else:
       # CI by 2 years data
       t7 = 2.3646   # 95% CI
-      self._AverageWithCI(
-          metrics_data[date_index + i:date_index + i + 8],
-          seasons[date_index + i],
-          8,
+      (mean, lower, upper) = self._AverageWithCI(
+          metrics_data[date_index : date_index + 8],
+          seasons[date_index],
           t7)
+      result.update({
+        '2year_revenue_growth_mean': mean,
+        '2year_revenue_growth_lower': lower,
+        '2year_revenue_growth_upper': upper,
+      })
+
+    if date_index + 12 >= len(seasons):
+      logging.info('%s has no enough data for 3 years revenue growth CI till %s',
+          stock_code, FLAGS.insight_date)
+    else:
       # CI by 3 years data
       t11 = 2.2010  # 95% CI
-      self._AverageWithCI(
-          metrics_data[date_index + i:date_index + i + 12],
-          seasons[date_index + i],
-          12,
+      (mean, lower, upper) = self._AverageWithCI(
+          metrics_data[date_index : date_index + 12],
+          seasons[date_index],
           t11)
+      result.update({
+        '3year_revenue_growth_mean': mean,
+        '3year_revenue_growth_lower': lower,
+        '3year_revenue_growth_upper': upper,
+      })
 
-  def _AverageWithCI(self, metrics_data, season, top_n, t):
-    if len(metrics_data) < top_n:
-      logging.info('No %d seasons data for %s', top_n, season)
-      return
+    return result
 
-    mean = sum(metrics_data) / float(top_n)
-    square_mean = sum([i ** 2 for i in metrics_data]) / float(top_n)
-    s = math.sqrt((square_mean - mean ** 2) * float(top_n) / float(top_n - 1))
-    # subject to t distribution
-    lower = mean - t * s / math.sqrt(top_n)
-    upper = mean + t * s / math.sqrt(top_n)
-    print season, '%d seasons' % top_n, mean, lower, upper
+
+  def _AverageWithCI(self, metrics_data, season, t):
+    """ Returns (mean, lower, upper). """
+    size = len(metrics_data)
+    mean = sum(metrics_data) / float(size)
+    # avg(x^2)
+    square_mean = sum([i ** 2 for i in metrics_data]) / float(size)
+    s = math.sqrt((square_mean - mean ** 2) * float(size) / float(size - 1))
+    # assume subject to t distribution
+    lower = mean - t * s / math.sqrt(size)
+    upper = mean + t * s / math.sqrt(size)
+    # print season, '%d seasons' % size, mean, lower, upper
+    return (mean, lower, upper)
 
   def _GetInsightDate(self, seasons):
     if FLAGS.insight_date.lower() == 'latest':
       return 0
+    # binary search the insight date.
     i = bisect.bisect_left(seasons, FLAGS.insight_date)
     if i >= len(seasons) or seasons[i] != FLAGS.insight_date:  # does not exist
       return -1
