@@ -1,6 +1,9 @@
 # Ignores of all data
 data/*
 
+# python compiled
+*.pyc
+
 # Swap file of VIM
 *.swp
 *.swa

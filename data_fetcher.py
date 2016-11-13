@@ -14,7 +14,9 @@ argument_parser.add_argument('--skip_fetching_data', default=False, action='stor
     help='Whether to totally skip fetching raw data from url.')
 argument_parser.add_argument('--force_refetch', default=False, action='store_true',
     help='If true, always refetch the data even if it already exists.')
-FLAGS = None
+
+FLAGS = argument_parser.parse_args()
+
 
 # The base class
 class DataFetcher(object):
@@ -167,9 +169,6 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
 
 
 def main():
-  global FLAGS
-  FLAGS = argument_parser.parse_args()
-
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   stock_code = '000977'
