@@ -6,13 +6,20 @@ import logging
 import threading
 import Queue
 
+import flags
 import data_fetcher
 
-argument_parser = argparse.ArgumentParser()  # add_help=False, parents=[data_fetcher.argument_parser])
-argument_parser.add_argument('--num_fetcher_threads', type=int, default=1,
-    help='The max number of data fetcher threads in parallel.')
+FLAGS = flags.FLAGS
 
-FLAGS = argument_parser.parse_args()
+def GetArgParser(with_help=True):
+  parser = argparse.ArgumentParser(
+      add_help=with_help,
+      parents=[
+        data_fetcher.GetArgParser(with_help=False),
+      ])
+  parser.add_argument('--num_fetcher_threads', type=int, default=1,
+      help='The max number of data fetcher threads in parallel.')
+  return parser
 
 
 class BatchDataFetcher:
@@ -53,6 +60,9 @@ class BatchDataFetcher:
 
 
 def main():
+  global FLAGS
+  FLAGS = GetArgParser().parse_args()
+
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   fetcher = data_fetcher.NeteaseSeasonFetcher(directory)

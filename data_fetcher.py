@@ -9,13 +9,17 @@ import re
 import sys
 import urllib2
 
-argument_parser = argparse.ArgumentParser()
-argument_parser.add_argument('--skip_fetching_data', default=False, action='store_true',
-    help='Whether to totally skip fetching raw data from url.')
-argument_parser.add_argument('--force_refetch', default=False, action='store_true',
-    help='If true, always refetch the data even if it already exists.')
+import flags
 
-FLAGS = argument_parser.parse_args()
+FLAGS = flags.FLAGS
+
+def GetArgParser(with_help=True):
+  parser = argparse.ArgumentParser(add_help=with_help)
+  parser.add_argument('--skip_fetching_data', default=False, action='store_true',
+      help='Whether to totally skip fetching raw data from url.')
+  parser.add_argument('--force_refetch', default=False, action='store_true',
+      help='If true, always refetch the data even if it already exists.')
+  return parser
 
 
 # The base class
@@ -169,6 +173,9 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
 
 
 def main():
+  global FLAGS
+  FLAGS = GetArgParser().parse_args()
+
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   stock_code = '000977'
