@@ -48,7 +48,7 @@ class BatchDataFetcher:
 
     # all stocks fetched
     self.__all_fetch_done = True
-    for thread in self__threads:
+    for thread in self.__threads:
       thread.join(timeout=60)  # wait at most 1 minute for the threads to exit
       assert not thread.is_alive()
 
@@ -60,8 +60,8 @@ class BatchDataFetcher:
 
 
 def main():
-  global FLAGS
-  FLAGS = GetArgParser().parse_args()
+  # Parse command line flags into FLAGS.
+  GetArgParser().parse_args(namespace=FLAGS)
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'

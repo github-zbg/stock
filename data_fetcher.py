@@ -173,8 +173,8 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
 
 
 def main():
-  global FLAGS
-  FLAGS = GetArgParser().parse_args()
+  # Parse command line flags into FLAGS.
+  GetArgParser().parse_args(namespace=FLAGS)
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
