@@ -10,12 +10,20 @@ import os
 import re
 import sys
 
-argument_parser = argparse.ArgumentParser()
-argument_parser.add_argument('--insight_date', default='latest',
-    help='The time to do insights: YYYY-03-31, YYYY-06-30, YYYY-09-30, YYYY-12-31 or latest.')
-argument_parser.add_argument('--insight_output', default='',
-    help='The output of insight data.')
-FLAGS = None
+import flags
+
+FLAGS = flags.FLAGS
+
+def GetArgParser(with_help=True):
+  parser = argparse.ArgumentParser(
+      add_help=with_help,
+      parents=[
+      ])
+  parser.add_argument('--insight_date', default='latest',
+      help='The time to do insights: YYYY-03-31, YYYY-06-30, YYYY-09-30, YYYY-12-31 or latest.')
+  parser.add_argument('--insight_output', default='',
+      help='The output of insight data.')
+  return parser
 
 # Calculate insights for each stock
 class DataInsights(object):
@@ -131,8 +139,8 @@ class DataInsights(object):
 
 
 def main():
-  global FLAGS
-  FLAGS = argument_parser.parse_args()
+  # Parse command line flags into FLAGS.
+  GetArgParser().parse_args(namespace=FLAGS)
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'

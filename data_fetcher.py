@@ -16,9 +16,9 @@ FLAGS = flags.FLAGS
 def GetArgParser(with_help=True):
   parser = argparse.ArgumentParser(add_help=with_help)
   parser.add_argument('--skip_fetching_data', default=False, action='store_true',
-      help='Whether to totally skip fetching raw data from url.')
+      help='If set, totally skip fetching raw data from url.')
   parser.add_argument('--force_refetch', default=False, action='store_true',
-      help='If true, always refetch the data even if it already exists.')
+      help='If set, always refetch the data even if it already exists.')
   return parser
 
 
@@ -163,11 +163,12 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
         'balance': ('http://quotes.money.163.com/service/zcfzb_%s.html' % stock_code),
         'income': ('http://quotes.money.163.com/service/lrb_%s.html' % stock_code),
         'cash': ('http://quotes.money.163.com/service/xjllb_%s.html' % stock_code),
-        'main_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=season' % stock_code),
-        'profit_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=season&part=ylnl' % stock_code),
-        'liability_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=season&part=chnl' % stock_code),
-        'growth_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=season&part=cznl' % stock_code),
-        'operating_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=season&part=yynl' % stock_code),
+        # the 'report' type is seasonal data
+        'main_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report' % stock_code),
+        'profit_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=ylnl' % stock_code),
+        'liability_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=chnl' % stock_code),
+        'growth_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=cznl' % stock_code),
+        'operating_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=yynl' % stock_code),
         'price_history': (''),
     }
 

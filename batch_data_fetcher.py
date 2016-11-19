@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import datetime
 import logging
 import threading
 import Queue
@@ -29,7 +30,7 @@ class BatchDataFetcher:
     self.__data_fetcher = data_fetcher  # the real data fetcher
     self.__threads = []  # all running threads
     self.__fetching_queue = Queue.Queue(max_threads)
-    self.__all_fetch_done = False;
+    self.__all_stock_put = False;
 
   def Fetch(self, stock_code_list):
     if len(stock_code_list) == 0:
@@ -43,20 +44,27 @@ class BatchDataFetcher:
       t.start()
     logging.info('%d threads started', len(self.__threads))
 
+    start_ts = datetime.datetime.now()
     for stock in stock_code_list:
       self.__fetching_queue.put(stock, block=True)
 
-    # all stocks fetched
-    self.__all_fetch_done = True
+    # all stocks put in the queue
+    self.__all_stock_put = True
+    self.__fetching_queue.join()  # block till all stocks fetched
+
+    end_ts = datetime.datetime.now()
+    logging.info('Total time elapsed in fetching data: %s', str(end_ts - start_ts))
+
     for thread in self.__threads:
-      thread.join(timeout=60)  # wait at most 1 minute for the threads to exit
+      thread.join(timeout=10)  # ensure all threads exit
       assert not thread.is_alive()
 
   def __RunThread(self):
-    while not self.__all_fetch_done:
+    while not self.__all_stock_put or not self.__fetching_queue.empty():
       # block at most 10 seconds to get the next stock
       stock_code = self.__fetching_queue.get(block=True, timeout=10)
       self.__data_fetcher.Fetch(stock_code)
+      self.__fetching_queue.task_done()  # decrease the queue item in process
 
 
 def main():
