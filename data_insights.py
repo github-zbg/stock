@@ -4,6 +4,7 @@
 import argparse
 import bisect
 import csv
+import datetime
 import logging
 import math
 import os
@@ -19,11 +20,27 @@ def GetArgParser(with_help=True):
       add_help=with_help,
       parents=[
       ])
-  parser.add_argument('--insight_date', default='latest',
-      help='The time to do insights: YYYY-03-31, YYYY-06-30, YYYY-09-30, YYYY-12-31 or latest.')
-  parser.add_argument('--insight_output', default='',
-      help='The output of insight data.')
+  parser.add_argument('--insight_date', default=_GetLastSeasonEndDate(),
+      help='The time to do insights: YYYY-3-31, YYYY-6-30, YYYY-9-30, YYYY-12-31.')
   return parser
+
+
+def _GetLastSeasonEndDate():
+  """ Returns the last season end date of today. """
+  def _season_month(month):
+    # 1,2,3 -> 1
+    # 4,5,6 -> 4
+    # 7,8,9 -> 7
+    # 10,11,12 -> 10
+    return (month - 1) / 3 * 3 + 1
+
+  today = datetime.date.today()
+  # next_start is YYYY-01-01, YYYY-04-01, YYYY-07-01, YYYY-10-01
+  next_start = datetime.date(today.year, _season_month(today.month), 1)
+  last_end = (next_start - datetime.timedelta(days=1)).isoformat()
+  return last_end
+  # return '%d-%d-%d' % (last_end.year, last_end.month, last_end.day)
+
 
 # Calculate insights for each stock
 class DataInsights(object):
@@ -45,9 +62,10 @@ class DataInsights(object):
         u'主营业务收入(万元)_growth'.encode('UTF8'),
     ]
 
-    # column -> value
+    # The data to return: column -> value
     insight_data = {
         'Season': FLAGS.insight_date,
+        'Code': stock_code,
     }
     for row in reader:
       metrics_name = row[metrics_column_name]
@@ -59,7 +77,7 @@ class DataInsights(object):
       revenue_stats = self._DoRevenueGrowthStats(stock_code, metrics_data, seasons)
       insight_data.update(revenue_stats)
 
-    print insight_data
+    logging.info('Insighting %s done.', stock_code)
     return insight_data
 
   def _DoRevenueGrowthStats(self, stock_code, metrics_data, seasons):
@@ -129,13 +147,20 @@ class DataInsights(object):
     return (mean, lower, upper)
 
   def _GetInsightDate(self, seasons):
-    if FLAGS.insight_date.lower() == 'latest':
-      return 0
-    # binary search the insight date.
-    i = bisect.bisect_left(seasons, FLAGS.insight_date)
-    if i >= len(seasons) or seasons[i] != FLAGS.insight_date:  # does not exist
+    if len(seasons) == 0:
       return -1
-    return i
+    # seasons are in descending order.
+    start = 0
+    end = len(seasons) - 1
+    while start != end:
+      mid = (start + end) / 2
+      if FLAGS.insight_date < seasons[mid]:
+        start = mid + 1
+      else:
+        end = mid
+    if FLAGS.insight_date == seasons[start]:
+      return start
+    return -1
 
 
 def main():

@@ -4,6 +4,7 @@
 # The main controller of the whole workflow.
 
 import argparse
+import csv
 import datetime
 import logging
 import os
@@ -24,11 +25,16 @@ def GetArgParser(with_help=True):
         # data_fetcher.GetArgParser(with_help=False),
         data_insights.GetArgParser(with_help=False),
       ])
+
   parser.add_argument('--data_directory', default='./data',
       help='The base directory of output.')
   parser.add_argument('--annual', default=False, action='store_true',
       help='Whether to run seasonal(default) or annual data.')
+  parser.add_argument('--insight_output', default=None,
+      help='The output of insight data.')
+
   return parser
+
 
 def _GetDataDirectory():
   abs_base = FLAGS.data_directory
@@ -57,6 +63,25 @@ def _GetDataDirectory():
   return full_path
 
 
+def _GetHeader(column_map):
+  # special columns in order
+  special = ['Code', 'Season']
+  special_set = set(special)
+
+  header = []
+  for col in special:
+    if col in column_map:
+      header.append(col)
+
+  sorted_keys = column_map.keys()
+  sorted_keys.sort()  # ordered
+  for k in sorted_keys:
+    if k not in special_set:
+      header.append(k)
+
+  return header
+
+
 def RunData():
   directory = _GetDataDirectory()
   logging.info('Data directory: %s', directory)
@@ -73,12 +98,24 @@ def RunData():
   logging.info('Start batch data fetching')
   batch = batch_data_fetcher.BatchDataFetcher(fetcher, FLAGS.num_fetcher_threads)
   batch.Fetch(stock_code_list)
-
   logging.info('Batch data fetching completed')
+
   logging.info('Start data insighs')
   insighter = data_insights.DataInsights(directory)
+  row_of_insights = []
   for stock_code in stock_code_list:
-    insighter.DoStats(stock_code)
+    row_of_insights.append(insighter.DoStats(stock_code))
+
+  # output insighs
+  if len(row_of_insights) > 0:
+    outfile = sys.stdout  # output to stdout by default
+    if FLAGS.insight_output:
+      outfile = open(os.path.join(directory, FLAGS.insight_output), 'w')
+
+    header = _GetHeader(row_of_insights[0])
+    writer = csv.DictWriter(outfile, fieldnames=header)
+    writer.writeheader()
+    writer.writerows(row_of_insights)
 
 
 def main():
