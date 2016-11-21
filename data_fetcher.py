@@ -12,14 +12,10 @@ import urllib2
 import flags
 
 FLAGS = flags.FLAGS
-
-def GetArgParser(with_help=True):
-  parser = argparse.ArgumentParser(add_help=with_help)
-  parser.add_argument('--skip_fetching_data', default=False, action='store_true',
-      help='If set, totally skip fetching raw data from url.')
-  parser.add_argument('--force_refetch', default=False, action='store_true',
-      help='If set, always refetch the data even if it already exists.')
-  return parser
+flags.ArgParser().add_argument('--skip_fetching_data', default=False, action='store_true',
+    help='If set, totally skip fetching raw data from url.')
+flags.ArgParser().add_argument('--force_refetch', default=False, action='store_true',
+    help='If set, always refetch the data even if it already exists.')
 
 
 # The base class
@@ -175,7 +171,7 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
 
 def main():
   # Parse command line flags into FLAGS.
-  GetArgParser().parse_args(namespace=FLAGS)
+  flags.ArgParser().parse_args(namespace=FLAGS)
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'

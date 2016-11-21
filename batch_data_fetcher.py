@@ -11,16 +11,8 @@ import flags
 import data_fetcher
 
 FLAGS = flags.FLAGS
-
-def GetArgParser(with_help=True):
-  parser = argparse.ArgumentParser(
-      add_help=with_help,
-      parents=[
-        data_fetcher.GetArgParser(with_help=False),
-      ])
-  parser.add_argument('--num_fetcher_threads', type=int, default=1,
-      help='The max number of data fetcher threads in parallel.')
-  return parser
+flags.ArgParser().add_argument('--num_fetcher_threads', type=int, default=1,
+    help='The max number of data fetcher threads in parallel.')
 
 
 class BatchDataFetcher:
@@ -69,7 +61,7 @@ class BatchDataFetcher:
 
 def main():
   # Parse command line flags into FLAGS.
-  GetArgParser().parse_args(namespace=FLAGS)
+  flags.ArgParser().parse_args(namespace=FLAGS)
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'

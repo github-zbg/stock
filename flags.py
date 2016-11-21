@@ -7,5 +7,10 @@ import argparse
 class __F(object):
   pass
 
-# The parse result of command line flags.
+# The shared parse result of command line flags.
 FLAGS = __F()
+
+# The shared parser to define arguments.
+__arg_parser = argparse.ArgumentParser()
+def ArgParser():
+  return __arg_parser

@@ -13,18 +13,6 @@ import sys
 
 import flags
 
-FLAGS = flags.FLAGS
-
-def GetArgParser(with_help=True):
-  parser = argparse.ArgumentParser(
-      add_help=with_help,
-      parents=[
-      ])
-  parser.add_argument('--insight_date', default=_GetLastSeasonEndDate(),
-      help='The time to do insights: YYYY-3-31, YYYY-6-30, YYYY-9-30, YYYY-12-31.')
-  return parser
-
-
 def _GetLastSeasonEndDate():
   """ Returns the last season end date of today. """
   def _season_month(month):
@@ -39,7 +27,13 @@ def _GetLastSeasonEndDate():
   next_start = datetime.date(today.year, _season_month(today.month), 1)
   last_end = (next_start - datetime.timedelta(days=1)).isoformat()
   return last_end
-  # return '%d-%d-%d' % (last_end.year, last_end.month, last_end.day)
+
+
+FLAGS = flags.FLAGS
+flags.ArgParser().add_argument(
+    '--insight_date',
+    default=_GetLastSeasonEndDate(),
+    help='The time to do insights: YYYY-3-31, YYYY-6-30, YYYY-9-30, YYYY-12-31.')
 
 
 # Calculate insights for each stock
@@ -165,7 +159,7 @@ class DataInsights(object):
 
 def main():
   # Parse command line flags into FLAGS.
-  GetArgParser().parse_args(namespace=FLAGS)
+  flags.ArgParser().parse_args(namespace=FLAGS)
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'

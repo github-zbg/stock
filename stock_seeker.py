@@ -16,24 +16,12 @@ import data_fetcher
 import data_insights
 
 FLAGS = flags.FLAGS
-
-def GetArgParser(with_help=True):
-  parser = argparse.ArgumentParser(
-      add_help=with_help,
-      parents=[
-        batch_data_fetcher.GetArgParser(with_help=False),
-        # data_fetcher.GetArgParser(with_help=False),
-        data_insights.GetArgParser(with_help=False),
-      ])
-
-  parser.add_argument('--data_directory', default='./data',
-      help='The base directory of output.')
-  parser.add_argument('--annual', default=False, action='store_true',
-      help='Whether to run seasonal(default) or annual data.')
-  parser.add_argument('--insight_output', default=None,
-      help='The output of insight data.')
-
-  return parser
+flags.ArgParser().add_argument('--data_directory', default='./data',
+    help='The base directory of output.')
+flags.ArgParser().add_argument('--annual', default=False, action='store_true',
+    help='Whether to run seasonal(default) or annual data.')
+flags.ArgParser().add_argument('--insight_output', default=None,
+    help='The output of insight data.')
 
 
 def _GetDataDirectory():
@@ -120,7 +108,7 @@ def RunData():
 
 def main():
   # Parse command line flags into FLAGS.
-  GetArgParser().parse_args(namespace=FLAGS)
+  flags.ArgParser().parse_args(namespace=FLAGS)
   # Set logging level
   logging.basicConfig(level=logging.INFO)
   # Run
