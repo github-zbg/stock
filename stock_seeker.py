@@ -14,6 +14,7 @@ import flags
 import batch_data_fetcher
 import data_fetcher
 import data_insights
+import stock_info
 
 FLAGS = flags.FLAGS
 flags.ArgParser().add_argument('--data_directory', default='./data',
@@ -53,7 +54,7 @@ def _GetDataDirectory():
 
 def _GetHeader(column_map):
   # special columns in order
-  special = ['Code', 'Season']
+  special = ['Code', 'Name', 'Season']
   special_set = set(special)
 
   header = []
@@ -71,28 +72,25 @@ def _GetHeader(column_map):
 
 
 def RunData():
+  # load a map of {code -> stock}
+  stocks = stock_info.LoadAllStocks()
+  # randomly pick 10 stocks
+  stock_list = [stocks[c] for c in stocks.keys()[:10] ]
+
   directory = _GetDataDirectory()
   logging.info('Data directory: %s', directory)
 
-  fetcher = data_fetcher.NeteaseSeasonFetcher(directory)
-  stock_code_list = [
-      '000977',  # 浪潮信息
-      '002241',  # 歌尔股份
-      '002508',  # 老板电器
-      '002007',  # 华兰生物
-      '000651',  # 格力电器
-  ]
-
   logging.info('Start batch data fetching')
+  fetcher = data_fetcher.NeteaseSeasonFetcher(directory)
   batch = batch_data_fetcher.BatchDataFetcher(fetcher, FLAGS.num_fetcher_threads)
-  batch.Fetch(stock_code_list)
+  batch.Fetch(stock_list)
   logging.info('Batch data fetching completed')
 
   logging.info('Start data insighs')
   insighter = data_insights.DataInsights(directory)
   row_of_insights = []
-  for stock_code in stock_code_list:
-    row_of_insights.append(insighter.DoStats(stock_code))
+  for stock in stock_list:
+    row_of_insights.append(insighter.DoStats(stock))
 
   # output insighs
   if len(row_of_insights) > 0:

@@ -9,27 +9,33 @@ import Queue
 
 import flags
 import data_fetcher
+import stock_info
 
 FLAGS = flags.FLAGS
 flags.ArgParser().add_argument('--num_fetcher_threads', type=int, default=1,
     help='The max number of data fetcher threads in parallel.')
+
+Stock = stock_info.Stock
 
 
 class BatchDataFetcher:
   def __init__(self, data_fetcher, max_threads):
     assert 0 < max_threads and max_threads <= 100
     self.__max_threads = max_threads
-    self.__data_fetcher = data_fetcher  # the real data fetcher
-    self.__threads = []  # all running threads
+    self.__data_fetcher = data_fetcher  # the real underlying data fetcher
+
+    # all running threads
+    self.__threads = []
+    # the stocks waiting for threads to process
     self.__fetching_queue = Queue.Queue(max_threads)
+    # the flag indicating all stocks have been put into queue.
     self.__all_stock_put = False;
 
-  def Fetch(self, stock_code_list):
-    if len(stock_code_list) == 0:
+  def Fetch(self, stock_list):
+    if len(stock_list) == 0:
       return
 
-    num_threads = min(len(stock_code_list), self.__max_threads)
-    self.__all_fetch_done = False;
+    num_threads = min(len(stock_list), self.__max_threads)
     for i in range(num_threads):
       t = threading.Thread(target=self.__RunThread, name=('FetchThread-%d', i))
       self.__threads.append(t)
@@ -37,7 +43,7 @@ class BatchDataFetcher:
     logging.info('%d threads started', len(self.__threads))
 
     start_ts = datetime.datetime.now()
-    for stock in stock_code_list:
+    for stock in stock_list:
       self.__fetching_queue.put(stock, block=True)
 
     # all stocks put in the queue
@@ -54,8 +60,8 @@ class BatchDataFetcher:
   def __RunThread(self):
     while not self.__all_stock_put or not self.__fetching_queue.empty():
       # block at most 10 seconds to get the next stock
-      stock_code = self.__fetching_queue.get(block=True, timeout=10)
-      self.__data_fetcher.Fetch(stock_code)
+      stock = self.__fetching_queue.get(block=True, timeout=10)
+      self.__data_fetcher.Fetch(stock)
       self.__fetching_queue.task_done()  # decrease the queue item in process
 
 
@@ -66,17 +72,17 @@ def main():
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   fetcher = data_fetcher.NeteaseSeasonFetcher(directory)
-  stock_code_list = [
-      '000977',  # 浪潮信息
-      '002241',  # 歌尔股份
-      '002508',  # 老板电器
-      '002007',  # 华兰生物
-      '000651',  # 格力电器
+  stock_list = [
+      Stock('000977', '浪潮信息'),
+      Stock('002241', '歌尔股份'),
+      Stock('002508', '老板电器'),
+      Stock('002007', '华兰生物'),
+      Stock('000651', '格力电器'),
   ]
 
   print 'Start batch fetching'
   batch = BatchDataFetcher(fetcher, FLAGS.num_fetcher_threads)
-  batch.Fetch(stock_code_list)
+  batch.Fetch(stock_list)
 
 if __name__ == "__main__":
   main()

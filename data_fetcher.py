@@ -10,6 +10,7 @@ import sys
 import urllib2
 
 import flags
+import stock_info
 
 FLAGS = flags.FLAGS
 flags.ArgParser().add_argument('--skip_fetching_data', default=False, action='store_true',
@@ -17,14 +18,16 @@ flags.ArgParser().add_argument('--skip_fetching_data', default=False, action='st
 flags.ArgParser().add_argument('--force_refetch', default=False, action='store_true',
     help='If set, always refetch the data even if it already exists.')
 
+Stock = stock_info.Stock
+
 
 # The base class
 class DataFetcher(object):
   def __init__(self, directory):
     self._directory = directory
 
-  # Fetch data of a given stock code from sources
-  def Fetch(self, stock_code):
+  # Fetch data of a given stock from sources
+  def Fetch(self, stock):
     pass
 
 
@@ -45,31 +48,33 @@ class NeteaseFetcher(DataFetcher):
   def __init__(self, directory):
     super(NeteaseFetcher, self).__init__(directory)
 
-  def Fetch(self, stock_code):
+  def Fetch(self, stock):
     # setup the sources of a certain stock
-    data_sources = self._SetupDataSources(stock_code)
+    data_sources = self._SetupDataSources(stock)
     # fetch the raw data
-    self._FetchFromSources(stock_code, data_sources)
+    self._FetchFromSources(stock, data_sources)
     # process and calculate some derived data
-    self._RefineData(stock_code)
+    self._RefineData(stock)
 
-  def _FetchFromSources(self, stock_code, data_sources):
+  def _FetchFromSources(self, stock, data_sources):
     if FLAGS.skip_fetching_data:
       return
-    logging.info('Fetching %s ...', stock_code)
+    logging.info('Fetching %s(%s) ...', stock.code(), stock.name())
     for page_name in self._data_pages:
       page_url = data_sources.get(page_name)
       assert page_url
-      self._FetchUrl(stock_code, page_name, page_url)
+      self._FetchUrl(stock, page_name, page_url)
 
-  def _FetchUrl(self, stock_code, page_name, page_url):
-    filename = '%s.%s.csv' % (stock_code, page_name)
+  def _FetchUrl(self, stock, page_name, page_url):
+    filename = '%s.%s.csv' % (stock.code(), page_name)
     full_filepath = os.path.join(self._directory, filename)
     if not FLAGS.force_refetch and os.path.exists(full_filepath):
-      logging.info('%s exists. Skip fetching %s for %s', full_filepath, page_name, stock_code)
+      logging.info('%s exists. Skip fetching %s for %s(%s)',
+          full_filepath, page_name, stock.code(), stock.name())
       return
 
-    logging.info('Fetching %s for %s at %s', page_name, stock_code, page_url)
+    logging.info('Fetching %s for %s(%s) at %s',
+        page_name, stock.code(), stock.name(), page_url)
     response = urllib2.urlopen(page_url, timeout=15)  # 15 seconds timeout
     try:
       content = response.read()
@@ -85,14 +90,14 @@ class NeteaseFetcher(DataFetcher):
     f.write(content)
     f.close()
 
-  def _SetupDataSources(self, stock_code):
+  def _SetupDataSources(self, stock):
     return {}
 
-  def _RefineData(self, stock_code):
-    logging.info('Refining %s ...', stock_code)
+  def _RefineData(self, stock):
+    logging.info('Refining %s(%s) ...', stock.code(), stock.name())
     max_seasons = 12 * 4  # limit to the latest 12 years
     # {season -> {metrics -> value} }
-    full_raw_data = self._LoadFullRawData(stock_code, max_seasons)
+    full_raw_data = self._LoadFullRawData(stock, max_seasons)
     seasons = full_raw_data.keys()
     seasons.sort(reverse=True)  # from the latest season
 
@@ -116,18 +121,18 @@ class NeteaseFetcher(DataFetcher):
       refined_metrics_data.append([refined_name] + metrics_data)
       refined_metrics_data.append([refined_name + '_growth'] + growth_data)
 
-    writer = csv.writer(open(os.path.join(self._directory, '%s.refined.csv' % stock_code), 'w'))
+    writer = csv.writer(open(os.path.join(self._directory, '%s.refined.csv' % stock.code()), 'w'))
     writer.writerow([u'指标'.encode('UTF8')] + seasons)  # header
     writer.writerows(refined_metrics_data)
 
-  def _LoadFullRawData(self, stock_code, max_seasons):
+  def _LoadFullRawData(self, stock, max_seasons):
     full_data = {}  # {season -> {metrics -> value} }
     for page in self._data_pages:
-      self._LoadPage(page, stock_code, max_seasons, full_data)
+      self._LoadPage(page, stock, max_seasons, full_data)
     return full_data
 
-  def _LoadPage(self, page, stock_code, max_seasons, full_data):
-    datafile = os.path.join(self._directory, '%s.%s.csv' % (stock_code, page))
+  def _LoadPage(self, page, stock, max_seasons, full_data):
+    datafile = os.path.join(self._directory, '%s.%s.csv' % (stock.code(), page))
     reader = csv.DictReader(open(datafile))
     seasons = list(reader.fieldnames)[1:]  # keep only the seasons
     seasons = [s for s in seasons if len(s.strip()) > 0]
@@ -154,17 +159,17 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
   def __init__(self, directory):
     super(NeteaseSeasonFetcher, self).__init__(directory)
 
-  def _SetupDataSources(self, stock_code):
+  def _SetupDataSources(self, stock):
     return {
-        'balance': ('http://quotes.money.163.com/service/zcfzb_%s.html' % stock_code),
-        'income': ('http://quotes.money.163.com/service/lrb_%s.html' % stock_code),
-        'cash': ('http://quotes.money.163.com/service/xjllb_%s.html' % stock_code),
+        'balance': ('http://quotes.money.163.com/service/zcfzb_%s.html' % stock.code()),
+        'income': ('http://quotes.money.163.com/service/lrb_%s.html' % stock.code()),
+        'cash': ('http://quotes.money.163.com/service/xjllb_%s.html' % stock.code()),
         # the 'report' type is seasonal data
-        'main_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report' % stock_code),
-        'profit_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=ylnl' % stock_code),
-        'liability_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=chnl' % stock_code),
-        'growth_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=cznl' % stock_code),
-        'operating_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=yynl' % stock_code),
+        'main_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report' % stock.code()),
+        'profit_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=ylnl' % stock.code()),
+        'liability_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=chnl' % stock.code()),
+        'growth_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=cznl' % stock.code()),
+        'operating_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=yynl' % stock.code()),
         'price_history': (''),
     }
 
@@ -175,9 +180,9 @@ def main():
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
-  stock_code = '000977'
+  stock = Stock('000977', '浪潮信息')
   fetcher = NeteaseSeasonFetcher(directory)
-  fetcher.Fetch(stock_code)
+  fetcher.Fetch(stock)
 
 if __name__ == "__main__":
   main()

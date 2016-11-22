@@ -12,6 +12,9 @@ import re
 import sys
 
 import flags
+import stock_info
+
+Stock = stock_info.Stock
 
 def _GetLastSeasonEndDate():
   """ Returns the last season end date of today. """
@@ -42,10 +45,10 @@ class DataInsights(object):
     self._directory = directory
 
   # Calculate statistical insights
-  def DoStats(self, stock_code):
-    logging.info('Insighting %s ...', stock_code)
+  def DoStats(self, stock):
+    logging.info('Insighting %s(%s) ...', stock.code(), stock.name())
     # revenue from main business
-    datafile = os.path.join(self._directory, '%s.refined.csv' % stock_code)
+    datafile = os.path.join(self._directory, '%s.refined.csv' % stock.code())
     reader = csv.DictReader(open(datafile))
     seasons = list(reader.fieldnames)
     seasons = seasons[1:]  # keep only the dates
@@ -59,7 +62,8 @@ class DataInsights(object):
     # The data to return: column -> value
     insight_data = {
         'Season': FLAGS.insight_date,
-        'Code': stock_code,
+        'Code': stock.code(),
+        'Name': stock.name(),
     }
     for row in reader:
       metrics_name = row[metrics_column_name]
@@ -68,10 +72,10 @@ class DataInsights(object):
 
       # convert the matrix row into floats
       metrics_data = [float(row[s]) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else None for s in seasons]
-      revenue_stats = self._DoRevenueGrowthStats(stock_code, metrics_data, seasons)
+      revenue_stats = self._DoRevenueGrowthStats(stock.code(), metrics_data, seasons)
       insight_data.update(revenue_stats)
 
-    logging.info('Insighting %s done.', stock_code)
+    logging.info('Insighting %s(%s) done.', stock.code(), stock.name())
     return insight_data
 
   def _DoRevenueGrowthStats(self, stock_code, metrics_data, seasons):
@@ -129,10 +133,11 @@ class DataInsights(object):
 
   def _AverageWithCI(self, metrics_data, season, t):
     """ Returns (mean, lower, upper). """
-    size = len(metrics_data)
-    mean = sum(metrics_data) / float(size)
+    refined_data = [d if d else 0.0 for d in metrics_data]
+    size = len(refined_data)
+    mean = sum(refined_data) / float(size)
     # avg(x^2)
-    square_mean = sum([i ** 2 for i in metrics_data]) / float(size)
+    square_mean = sum([i ** 2 for i in refined_data]) / float(size)
     s = math.sqrt((square_mean - mean ** 2) * float(size) / float(size - 1))
     # assume subject to t distribution
     lower = mean - t * s / math.sqrt(size)
@@ -162,10 +167,10 @@ def main():
   flags.ArgParser().parse_args(namespace=FLAGS)
 
   logging.basicConfig(level=logging.INFO)
-  directory = './data/test'
-  stock_code = '000977'
+  directory = './data/seasonal/2016-10-01'
+  stock = Stock('603131', '上海沪工')
   insighter = DataInsights(directory)
-  insighter.DoStats(stock_code)
+  print insighter.DoStats(stock)
 
 if __name__ == "__main__":
   main()
