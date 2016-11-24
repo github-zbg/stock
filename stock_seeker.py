@@ -14,6 +14,7 @@ import flags
 import batch_data_fetcher
 import data_fetcher
 import data_insights
+import date_util
 import stock_info
 
 FLAGS = flags.FLAGS
@@ -32,16 +33,8 @@ def _GetDataDirectory():
 
   sub_dir = 'annual' if FLAGS.annual else 'seasonal'
 
-  # get season or year
-  def _season_month(month):
-    # 1,2,3 -> 1
-    # 4,5,6 -> 4
-    # 7,8,9 -> 7
-    # 10,11,12 -> 10
-    return (month - 1) / 3 * 3 + 1
-
   today = datetime.date.today()
-  start_date = datetime.date(today.year, _season_month(today.month), 1)
+  start_date = date_util.GetSeasonStartDate(today)
   if FLAGS.annual:
     start_date = datetime.date(today.year, 1, 1)
 

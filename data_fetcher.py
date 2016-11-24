@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+import datetime
 import logging
 import os
 import re
@@ -10,6 +11,7 @@ import sys
 import urllib2
 
 import flags
+import date_util
 import stock_info
 
 FLAGS = flags.FLAGS
@@ -96,24 +98,25 @@ class NeteaseFetcher(DataFetcher):
   def _RefineData(self, stock):
     logging.info('Refining %s(%s) ...', stock.code(), stock.name())
     max_seasons = 12 * 4  # limit to the latest 12 years
-    # {season -> {metrics -> value} }
-    full_raw_data = self._LoadFullRawData(stock, max_seasons)
+    seasons_end = [date_util.GetLastDay(d)
+        for d in date_util.GetLastNSeasonsStart(datetime.date.today(), max_seasons)]
+    # {seasons_end -> {metrics -> value} }
+    full_raw_data = self._LoadFullRawData(stock, seasons_end)
     seasons = full_raw_data.keys()
     seasons.sort(reverse=True)  # from the latest season
 
     metrics_names = [
-        u'主营业务收入(万元)@main_metrics',
+        u'主营业务收入(万元)@main_metrics'.encode('UTF8'),
         # u'经营活动产生的现金流量净额(万元)',
     ]
 
     refined_metrics_data = []  # [metrics_name, value for each season]
     for metrics_name in metrics_names:
-      metrics_name = metrics_name.encode('UTF8')
-      metrics_data = [full_raw_data[s].get(metrics_name) for s in seasons]
+      metrics_data = [full_raw_data[season].get(metrics_name) for season in seasons]
       size = len(metrics_data)
       growth_data = [None] * size
       for i in range(size):
-        last_year = i + 4
+        last_year = i + 4  # YoY growth
         if metrics_data[i] and last_year < size and metrics_data[last_year]:
           growth_data[i] = (metrics_data[i] - metrics_data[last_year]) / abs(metrics_data[last_year]) * 100.0
       # append row to refined data
@@ -125,30 +128,26 @@ class NeteaseFetcher(DataFetcher):
     writer.writerow([u'指标'.encode('UTF8')] + seasons)  # header
     writer.writerows(refined_metrics_data)
 
-  def _LoadFullRawData(self, stock, max_seasons):
-    full_data = {}  # {season -> {metrics -> value} }
+  def _LoadFullRawData(self, stock, seasons_end):
+    full_data = {}  # {seasons_end -> {metrics -> value} }
     for page in self._data_pages:
-      self._LoadPage(page, stock, max_seasons, full_data)
+      self._LoadPage(page, stock, seasons_end, full_data)
     return full_data
 
-  def _LoadPage(self, page, stock, max_seasons, full_data):
+  def _LoadPage(self, page, stock, seasons_end, full_data):
     datafile = os.path.join(self._directory, '%s.%s.csv' % (stock.code(), page))
     reader = csv.DictReader(open(datafile))
-    seasons = list(reader.fieldnames)[1:]  # keep only the seasons
-    seasons = [s for s in seasons if len(s.strip()) > 0]
-    seasons.sort(reverse=True)  # from the latest season
-    if len(seasons) > max_seasons:
-      seasons = seasons[:max_seasons]
-    # netease use gbk
+    # The first column is metrics name.
     metrics_column_name_gbk = list(reader.fieldnames)[0]
     for row in reader:
       metrics_name = row[metrics_column_name_gbk]
-      # differentiate metrics in different pages.
+      # append "page" to differentiate metrics in different pages.
       metrics_name = '%s@%s' % (metrics_name.decode('GBK').encode('UTF8'), page)
-      for season in seasons:
-        per_season_data = full_data.setdefault(season, {})
+      for season in seasons_end:
+        season_string = season.isoformat()
+        per_season_data = full_data.setdefault(season_string, {})
         value = None
-        value_string = row.get(season)
+        value_string = row.get(season_string)
         if value_string and re.match(r'^-?\d+(\.\d+)?$', value_string):
           value = float(value_string)
         per_season_data.update({metrics_name: value})

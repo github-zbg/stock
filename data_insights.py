@@ -12,30 +12,15 @@ import re
 import sys
 
 import flags
+import date_util
 import stock_info
 
 Stock = stock_info.Stock
 
-def _GetLastSeasonEndDate():
-  """ Returns the last season end date of today. """
-  def _season_month(month):
-    # 1,2,3 -> 1
-    # 4,5,6 -> 4
-    # 7,8,9 -> 7
-    # 10,11,12 -> 10
-    return (month - 1) / 3 * 3 + 1
-
-  today = datetime.date.today()
-  # next_start is YYYY-01-01, YYYY-04-01, YYYY-07-01, YYYY-10-01
-  next_start = datetime.date(today.year, _season_month(today.month), 1)
-  last_end = (next_start - datetime.timedelta(days=1)).isoformat()
-  return last_end
-
-
 FLAGS = flags.FLAGS
 flags.ArgParser().add_argument(
     '--insight_date',
-    default=_GetLastSeasonEndDate(),
+    default=date_util.GetLastSeasonEndDate(datetime.date.today()).isoformat(),
     help='The time to do insights: YYYY-3-31, YYYY-6-30, YYYY-9-30, YYYY-12-31.')
 
 
@@ -96,32 +81,28 @@ class DataInsights(object):
       logging.warning('%s has no data for season %s.', stock_code, FLAGS.insight_date)
       return result
 
-    if date_index + 8 >= len(seasons):
+    data_2years = [v for v in metrics_data[date_index : date_index + 8] if v]
+    if len(data_2years) < 8:
       logging.info('%s has no enough data for 2 years revenue growth CI till %s',
           stock_code, FLAGS.insight_date)
     else:
       # CI by 2 years data
       t7 = 2.3646   # 95% CI
-      (mean, lower, upper) = self._AverageWithCI(
-          metrics_data[date_index : date_index + 8],
-          seasons[date_index],
-          t7)
+      (mean, lower, upper) = self._AverageWithCI(data_2years, seasons[date_index], t7)
       result.update({
         '2year_revenue_growth_mean': mean,
         '2year_revenue_growth_lower': lower,
         '2year_revenue_growth_upper': upper,
       })
 
-    if date_index + 12 >= len(seasons):
+    data_3years = [v for v in metrics_data[date_index : date_index + 12] if v]
+    if len(data_3years) < 12:
       logging.info('%s has no enough data for 3 years revenue growth CI till %s',
           stock_code, FLAGS.insight_date)
     else:
       # CI by 3 years data
       t11 = 2.2010  # 95% CI
-      (mean, lower, upper) = self._AverageWithCI(
-          metrics_data[date_index : date_index + 12],
-          seasons[date_index],
-          t11)
+      (mean, lower, upper) = self._AverageWithCI(data_3years, seasons[date_index], t11)
       result.update({
         '3year_revenue_growth_mean': mean,
         '3year_revenue_growth_lower': lower,
