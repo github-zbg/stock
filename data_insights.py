@@ -57,17 +57,18 @@ class DataInsights(object):
 
       # convert the matrix row into floats
       metrics_data = [float(row[s]) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else None for s in seasons]
-      revenue_stats = self._DoRevenueGrowthStats(stock.code(), metrics_data, seasons)
+      revenue_stats = self._DoRevenueGrowthStats(stock, metrics_data, seasons)
       insight_data.update(revenue_stats)
 
     logging.info('Insighting %s(%s) done.', stock.code(), stock.name())
     return insight_data
 
-  def _DoRevenueGrowthStats(self, stock_code, metrics_data, seasons):
+  def _DoRevenueGrowthStats(self, stock, metrics_data, seasons):
     assert len(metrics_data) == len(seasons)
 
     # stats column -> value
     result = {
+        'revenue_growth_at_season': None,
         '2year_revenue_growth_mean': None,
         '2year_revenue_growth_lower': None,
         '2year_revenue_growth_upper': None,
@@ -77,14 +78,16 @@ class DataInsights(object):
     }
 
     date_index = self._GetInsightDate(seasons)
-    if date_index < 0:
-      logging.warning('%s has no data for season %s.', stock_code, FLAGS.insight_date)
+    if date_index < 0 or not metrics_data[date_index]:
+      logging.warning('%s(%s) has no data for season %s.',
+          stock.code(), stock.name(), FLAGS.insight_date)
       return result
+    result['revenue_growth_at_season'] = metrics_data[date_index]
 
-    data_2years = [v for v in metrics_data[date_index : date_index + 8] if v]
+    data_2years = [v for v in metrics_data[date_index + 1 : date_index + 9] if v]
     if len(data_2years) < 8:
-      logging.info('%s has no enough data for 2 years revenue growth CI till %s',
-          stock_code, FLAGS.insight_date)
+      logging.info('%s(%s) has no enough data for 2 years revenue growth CI before %s',
+          stock.code(), stock.name(), FLAGS.insight_date)
     else:
       # CI by 2 years data
       t7 = 2.3646   # 95% CI
@@ -95,10 +98,10 @@ class DataInsights(object):
         '2year_revenue_growth_upper': upper,
       })
 
-    data_3years = [v for v in metrics_data[date_index : date_index + 12] if v]
+    data_3years = [v for v in metrics_data[date_index + 1 : date_index + 13] if v]
     if len(data_3years) < 12:
-      logging.info('%s has no enough data for 3 years revenue growth CI till %s',
-          stock_code, FLAGS.insight_date)
+      logging.info('%s(%s) has no enough data for 3 years revenue growth CI before %s',
+          stock.code(), stock.name(), FLAGS.insight_date)
     else:
       # CI by 3 years data
       t11 = 2.2010  # 95% CI
