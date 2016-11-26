@@ -44,11 +44,25 @@ class NeteaseFetcher(DataFetcher):
       'liability_metrics',  # The liability metrics page pattern
       'growth_metrics',     # The growth metrics page pattern
       'operating_metrics',  # The operating metrics page pattern
-      # 'price_history',      # The price history page pattern
+      'price_history',      # The price history page pattern
   ]
 
   def __init__(self, directory):
     super(NeteaseFetcher, self).__init__(directory)
+    # this is the next seasons' start date.
+    self._reporting_seasons = self._GetReportingSeasons()
+
+  def _GetReportingSeasons(self):
+    """ Returns a list of reporting seasons that we are interested in.
+    must be overridden.
+    """
+    assert False, 'Must override _GetReportingSeasons';
+
+  def _SetupDataSources(self, stock):
+    """ Setup the real urls of data sources.
+    must be overridden.
+    """
+    assert False, 'Must override _SetupDataSources.';
 
   def Fetch(self, stock):
     # setup the sources of a certain stock
@@ -92,14 +106,9 @@ class NeteaseFetcher(DataFetcher):
     f.write(content)
     f.close()
 
-  def _SetupDataSources(self, stock):
-    return {}
-
   def _RefineData(self, stock):
     logging.info('Refining %s(%s) ...', stock.code(), stock.name())
-    max_seasons = 12 * 4  # limit to the latest 12 years
-    seasons_end = [date_util.GetLastDay(d)
-        for d in date_util.GetLastNSeasonsStart(datetime.date.today(), max_seasons)]
+    seasons_end = [date_util.GetLastDay(d) for d in self._reporting_seasons]
     # {seasons_end -> {metrics -> value} }
     full_raw_data = self._LoadFullRawData(stock, seasons_end)
     seasons = full_raw_data.keys()
@@ -131,7 +140,8 @@ class NeteaseFetcher(DataFetcher):
   def _LoadFullRawData(self, stock, seasons_end):
     full_data = {}  # {seasons_end -> {metrics -> value} }
     for page in self._data_pages:
-      self._LoadPage(page, stock, seasons_end, full_data)
+      if page != 'price_history':
+        self._LoadPage(page, stock, seasons_end, full_data)
     return full_data
 
   def _LoadPage(self, page, stock, seasons_end, full_data):
@@ -158,7 +168,20 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
   def __init__(self, directory):
     super(NeteaseSeasonFetcher, self).__init__(directory)
 
+  def _GetReportingSeasons(self):
+    """ Returns a list of seasons in reserver order. E.g. [2016-10-01, 2016-07-01].
+    """
+    max_seasons = 12 * 4  # limit to the latest 12 years
+    return date_util.GetLastNSeasonsStart(datetime.date.today(), max_seasons)
+
   def _SetupDataSources(self, stock):
+    price_end_date = self._reporting_seasons[0].strftime('%Y%m%d')
+    # The earliest reporting season is the previous day of reporting_seasons[-1].
+    # So we need the price since that season's start date.
+    price_start_date = date_util.GetSeasonStartDate(
+        date_util.GetLastDay(self._reporting_seasons[-1])).strftime('%Y%m%d')
+    # the stock code in the price history url should be tranformed.
+    code = '0%s' % stock.code() if stock.code().startswith('6') else '1%s' % stock.code()
     return {
         'balance': ('http://quotes.money.163.com/service/zcfzb_%s.html' % stock.code()),
         'income': ('http://quotes.money.163.com/service/lrb_%s.html' % stock.code()),
@@ -169,7 +192,9 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
         'liability_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=chnl' % stock.code()),
         'growth_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=cznl' % stock.code()),
         'operating_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=yynl' % stock.code()),
-        'price_history': (''),
+        # the price fields are: close price, total value and market value.
+        'price_history': ('http://quotes.money.163.com/service/chddata.html' +
+            '?code=%s&start=%s&end=%s&fields=TCLOSE;TCAP;MCAP' % (code, price_start_date, price_end_date)),
     }
 
 
