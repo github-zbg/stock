@@ -49,7 +49,6 @@ class NeteaseFetcher(DataFetcher):
 
   def __init__(self, directory):
     super(NeteaseFetcher, self).__init__(directory)
-    # this is the next seasons' start date.
     self._reporting_seasons = self._GetReportingSeasons()
 
   def _GetReportingSeasons(self):
@@ -108,34 +107,64 @@ class NeteaseFetcher(DataFetcher):
 
   def _RefineData(self, stock):
     logging.info('Refining %s(%s) ...', stock.code(), stock.name())
-    seasons_end = [date_util.GetLastDay(d) for d in self._reporting_seasons]
+    seasons_in_string = [season.isoformat() for season in self._reporting_seasons]
     # {seasons_end -> {metrics -> value} }
-    full_raw_data = self._LoadFullRawData(stock, seasons_end)
-    seasons = full_raw_data.keys()
-    seasons.sort(reverse=True)  # from the latest season
+    full_raw_data = self._LoadFullRawData(stock, self._reporting_seasons)
 
-    metrics_names = [
+    # {metrics_name -> {seasons_end -> value} }
+    refined_metrics_data = {}
+
+    metrics_names_for_growth = [
         u'主营业务收入(万元)@main_metrics'.encode('UTF8'),
+        u'基本每股收益(元)@main_metrics'.encode('UTF8'),
         # u'经营活动产生的现金流量净额(万元)',
     ]
 
-    refined_metrics_data = []  # [metrics_name, value for each season]
-    for metrics_name in metrics_names:
-      metrics_data = [full_raw_data[season].get(metrics_name) for season in seasons]
+    for metrics_name in metrics_names_for_growth:
+      metrics_data = [full_raw_data[season].get(metrics_name)
+          for season in seasons_in_string]
       size = len(metrics_data)
       growth_data = [None] * size
       for i in range(size):
         last_year = i + 4  # YoY growth
         if metrics_data[i] and last_year < size and metrics_data[last_year]:
           growth_data[i] = (metrics_data[i] - metrics_data[last_year]) / abs(metrics_data[last_year]) * 100.0
-      # append row to refined data
+      # add to refined data
       refined_name = metrics_name.split('@')[0]
-      refined_metrics_data.append([refined_name] + metrics_data)
-      refined_metrics_data.append([refined_name + '_growth'] + growth_data)
+      refined_metrics_data[refined_name] = dict(zip(seasons_in_string, metrics_data))
+      refined_metrics_data[refined_name + '_growth'] = dict(zip(seasons_in_string, growth_data))
 
-    writer = csv.writer(open(os.path.join(self._directory, '%s.refined.csv' % stock.code()), 'w'))
-    writer.writerow([u'指标'.encode('UTF8')] + seasons)  # header
-    writer.writerows(refined_metrics_data)
+    # calculate PE.
+    price_history = self._LoadAllPrices(stock)
+    seasonal_price = self._GetSeasonalPrice(price_history, self._reporting_seasons)
+    seasonal_eps = refined_metrics_data.get(u'基本每股收益(元)'.encode('UTF8'))
+    seasonal_pe = {}
+    for season in self._reporting_seasons:
+      season_string = season.isoformat()
+      price = seasonal_price.get(season_string)
+      eps = seasonal_eps.get(season_string)
+      # how to convert seasonal eps to annual eps
+      multiplier = {3: 4.0, 6: 2.0, 9: 4.0 / 3.0, 12: 1.0}
+      if eps and abs(eps) > 1e-6:
+        eps *= multiplier[season.month]
+      else:
+        eps = None
+      pe = price / eps if price and eps else None
+      seasonal_pe[season_string] = pe
+    refined_metrics_data['PE'] = seasonal_pe
+
+    # write csv
+    metrics_column = u'指标'.encode('UTF8')
+    # the columns are in this order.
+    header = [metrics_column] + seasons_in_string
+    writer = csv.DictWriter(
+        open(os.path.join(self._directory, '%s.refined.csv' % stock.code()), 'w'),
+        fieldnames=header)
+    writer.writeheader()
+    for metrics_name, values in refined_metrics_data.iteritems():
+      row = {metrics_column: metrics_name}
+      row.update(values)
+      writer.writerow(row)
 
   def _LoadFullRawData(self, stock, seasons_end):
     full_data = {}  # {seasons_end -> {metrics -> value} }
@@ -162,6 +191,32 @@ class NeteaseFetcher(DataFetcher):
           value = float(value_string)
         per_season_data.update({metrics_name: value})
 
+  def _LoadAllPrices(self, stock):
+    """ Retuns {date(string) -> price(float)}. """
+    pricefile = os.path.join(self._directory, '%s.price_history.csv' % stock.code())
+    reader = csv.DictReader(open(pricefile))
+    date_column = u'日期'.encode('GBK')
+    price_column = u'收盘价'.encode('GBK')
+    all_prices = {}
+    for row in reader:
+      all_prices[row[date_column]] = float(row[price_column])
+    return all_prices
+
+  def _GetSeasonalPrice(self, all_prices, seasons):
+    """ Retuns {season -> average price}. """
+    seasonal_price = {}
+    for season_end in seasons:
+      season_start = date_util.GetSeasonStartDate(season_end)
+      day = season_start
+      prices = []
+      while day <= season_end:
+        p = all_prices.get(day.isoformat(), 0.0)
+        if p > 1e-6:
+          prices.append(p)
+        day += datetime.timedelta(days=1)
+      seasonal_price[season_end.isoformat()] = (sum(prices) / len(prices) if len(prices) else None)
+    return seasonal_price
+
 
 # Netease per season data fetcher
 class NeteaseSeasonFetcher(NeteaseFetcher):
@@ -169,17 +224,17 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
     super(NeteaseSeasonFetcher, self).__init__(directory)
 
   def _GetReportingSeasons(self):
-    """ Returns a list of seasons in reserver order. E.g. [2016-10-01, 2016-07-01].
+    """ Returns a list of seasons in reserver order. E.g. [2016-09-30, 2016-06-30].
     """
     max_seasons = 12 * 4  # limit to the latest 12 years
-    return date_util.GetLastNSeasonsStart(datetime.date.today(), max_seasons)
+    return [date_util.GetLastDay(d)
+        for d in date_util.GetLastNSeasonsStart(datetime.date.today(), max_seasons)]
 
   def _SetupDataSources(self, stock):
     price_end_date = self._reporting_seasons[0].strftime('%Y%m%d')
-    # The earliest reporting season is the previous day of reporting_seasons[-1].
+    # The earliest reporting season is reporting_seasons[-1].
     # So we need the price since that season's start date.
-    price_start_date = date_util.GetSeasonStartDate(
-        date_util.GetLastDay(self._reporting_seasons[-1])).strftime('%Y%m%d')
+    price_start_date = date_util.GetSeasonStartDate(self._reporting_seasons[-1]).strftime('%Y%m%d')
     # the stock code in the price history url should be tranformed.
     code = '0%s' % stock.code() if stock.code().startswith('6') else '1%s' % stock.code()
     return {
