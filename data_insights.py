@@ -21,51 +21,59 @@ FLAGS = flags.FLAGS
 flags.ArgParser().add_argument(
     '--insight_date',
     default=date_util.GetLastSeasonEndDate(datetime.date.today()).isoformat(),
-    help='The time to do insights: YYYY-3-31, YYYY-6-30, YYYY-9-30, YYYY-12-31.')
+    help='The time to do insights: YYYY-03-31, YYYY-06-30, YYYY-09-30, YYYY-12-31.')
 
 
 # Calculate insights for each stock
 class DataInsights(object):
   def __init__(self, directory):
     self._directory = directory
+    # parse and check the insight date.
+    self._insight_date = datetime.datetime.strptime(FLAGS.insight_date, '%Y-%m-%d').date()
 
   # Calculate statistical insights
   def DoStats(self, stock):
-    logging.info('Insighting %s(%s) ...', stock.code(), stock.name())
+    logging.info('Insighting %s(%s) on season %s ...',
+        stock.code(), stock.name(), self._insight_date.isoformat())
     # revenue from main business
     datafile = os.path.join(self._directory, '%s.refined.csv' % stock.code())
     reader = csv.DictReader(open(datafile))
-    seasons = list(reader.fieldnames)
-    seasons = seasons[1:]  # keep only the dates
-    seasons.sort(reverse=True)  # from the latest season
+
+    # convert the seasonal metrics data into floats
+    seasons = list(reader.fieldnames)[1:]  # keep only the dates
+    seasons.sort(reverse=True)  # the latest season first
+    if self._insight_date.isoformat() not in seasons:
+      logging.warning('%s(%s) has no data on season %s.',
+          stock.code(), stock.name(), self._insight_date.isoformat())
 
     metrics_column_name = u'指标'.encode('UTF8')
-    metrics_names = [
-        u'主营业务收入(万元)_growth'.encode('UTF8'),
-    ]
+    metrics_functions = {
+        u'主营业务收入(万元)_growth'.encode('UTF8'): self._DoRevenueGrowthStats,
+    }
 
     # The data to return: column -> value
     insight_data = {
-        'Season': FLAGS.insight_date,
+        'Season': self._insight_date.isoformat(),
         'Code': stock.code(),
         'Name': stock.name(),
     }
     for row in reader:
       metrics_name = row[metrics_column_name]
-      if not metrics_name in metrics_names:
+      metrics_function = metrics_functions.get(metrics_name)
+      if not metrics_function:
         continue
 
-      # convert the matrix row into floats
-      metrics_data = [float(row[s]) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else None for s in seasons]
-      revenue_stats = self._DoRevenueGrowthStats(stock, metrics_data, seasons)
-      insight_data.update(revenue_stats)
+      logging.info('Running stats for %s', metrics_name)
+      # list of (season, value)
+      seasonal_data = [(s, float(row[s])) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else (s, None)
+          for s in seasons]
+      stats = metrics_function(stock, seasonal_data)
+      insight_data.update(stats)
 
     logging.info('Insighting %s(%s) done.', stock.code(), stock.name())
     return insight_data
 
-  def _DoRevenueGrowthStats(self, stock, metrics_data, seasons):
-    assert len(metrics_data) == len(seasons)
-
+  def _DoRevenueGrowthStats(self, stock, seasonal_data):
     # stats column -> value
     result = {
         'revenue_growth_at_season': None,
@@ -77,35 +85,34 @@ class DataInsights(object):
         '3year_revenue_growth_upper': None,
     }
 
-    date_index = self._GetInsightDate(seasons)
-    if date_index < 0 or not metrics_data[date_index]:
-      logging.warning('%s(%s) has no data for season %s.',
-          stock.code(), stock.name(), FLAGS.insight_date)
+    season_index = self._GetInsightDateIndex(seasonal_data)
+    if season_index < 0:
       return result
-    result['revenue_growth_at_season'] = metrics_data[date_index]
 
-    data_2years = [v for v in metrics_data[date_index + 1 : date_index + 9] if v]
-    if len(data_2years) < 8:
-      logging.info('%s(%s) has no enough data for 2 years revenue growth CI before %s',
-          stock.code(), stock.name(), FLAGS.insight_date)
+    result['revenue_growth_at_season'] = seasonal_data[season_index][1]
+
+    data_8seasons = [t[1] for t in seasonal_data[season_index + 1 : season_index + 9] if t[1]]
+    if len(data_8seasons) < 8:
+      logging.info('%s(%s) has no enough data for 8 seasons revenue growth CI before %s',
+          stock.code(), stock.name(), self._insight_date.isoformat())
     else:
       # CI by 2 years data
       t7 = 2.3646   # 95% CI
-      (mean, lower, upper) = self._AverageWithCI(data_2years, seasons[date_index], t7)
+      (mean, lower, upper) = self._AverageWithCI(data_8seasons, t7)
       result.update({
         '2year_revenue_growth_mean': mean,
         '2year_revenue_growth_lower': lower,
         '2year_revenue_growth_upper': upper,
       })
 
-    data_3years = [v for v in metrics_data[date_index + 1 : date_index + 13] if v]
-    if len(data_3years) < 12:
-      logging.info('%s(%s) has no enough data for 3 years revenue growth CI before %s',
-          stock.code(), stock.name(), FLAGS.insight_date)
+    data_12seasons = [t[1] for t in seasonal_data[season_index + 1 : season_index + 13] if t[1]]
+    if len(data_12seasons) < 12:
+      logging.info('%s(%s) has no enough data for 12 seasons revenue growth CI before %s',
+          stock.code(), stock.name(), self._insight_date.isformat())
     else:
       # CI by 3 years data
       t11 = 2.2010  # 95% CI
-      (mean, lower, upper) = self._AverageWithCI(data_3years, seasons[date_index], t11)
+      (mean, lower, upper) = self._AverageWithCI(data_12seasons, t11)
       result.update({
         '3year_revenue_growth_mean': mean,
         '3year_revenue_growth_lower': lower,
@@ -115,7 +122,7 @@ class DataInsights(object):
     return result
 
 
-  def _AverageWithCI(self, metrics_data, season, t):
+  def _AverageWithCI(self, metrics_data, t):
     """ Returns (mean, lower, upper). """
     refined_data = [d if d else 0.0 for d in metrics_data]
     size = len(refined_data)
@@ -126,22 +133,22 @@ class DataInsights(object):
     # assume subject to t distribution
     lower = mean - t * s / math.sqrt(size)
     upper = mean + t * s / math.sqrt(size)
-    # print season, '%d seasons' % size, mean, lower, upper
     return (mean, lower, upper)
 
-  def _GetInsightDate(self, seasons):
+  def _GetInsightDateIndex(self, seasons):
     if len(seasons) == 0:
       return -1
-    # seasons are in descending order.
+    insight_season = self._insight_date.isoformat()
+    # assume seasons are in descending order.
     start = 0
     end = len(seasons) - 1
     while start != end:
       mid = (start + end) / 2
-      if FLAGS.insight_date < seasons[mid]:
+      if insight_season < seasons[mid][0]:
         start = mid + 1
       else:
         end = mid
-    if FLAGS.insight_date == seasons[start]:
+    if insight_season == seasons[start][0]:
       return start
     return -1
 
@@ -151,10 +158,15 @@ def main():
   flags.ArgParser().parse_args(namespace=FLAGS)
 
   logging.basicConfig(level=logging.INFO)
-  directory = './data/seasonal/2016-10-01'
-  stock = Stock('603131', '上海沪工')
+  directory = './data/test'
+  stock = Stock('000977', '浪潮信息')
   insighter = DataInsights(directory)
-  print insighter.DoStats(stock)
+  stats = insighter.DoStats(stock)
+
+  header = stats.keys()
+  writer = csv.DictWriter(sys.stdout, fieldnames=header)
+  writer.writeheader()
+  writer.writerow(stats)
 
 if __name__ == "__main__":
   main()
