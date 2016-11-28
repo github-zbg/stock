@@ -90,8 +90,8 @@ class NeteaseFetcher(DataFetcher):
 
     logging.info('Fetching %s for %s(%s) at %s',
         page_name, stock.code(), stock.name(), page_url)
-    response = urllib2.urlopen(page_url, timeout=15)  # 15 seconds timeout
     try:
+      response = urllib2.urlopen(page_url, timeout=15)  # 15 seconds timeout
       content = response.read()
     except URLError, e:
       if hasattr(e, 'code'):  # HTTPError

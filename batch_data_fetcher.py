@@ -37,7 +37,7 @@ class BatchDataFetcher:
 
     num_threads = min(len(stock_list), self.__max_threads)
     for i in range(num_threads):
-      t = threading.Thread(target=self.__RunThread, name=('FetchThread-%d', i))
+      t = threading.Thread(target=self.__RunThread, name=('FetchThread-%d' % i))
       self.__threads.append(t)
       t.start()
     logging.info('%d threads started', len(self.__threads))
@@ -61,8 +61,12 @@ class BatchDataFetcher:
     while not self.__all_stock_put or not self.__fetching_queue.empty():
       # block at most 10 seconds to get the next stock
       stock = self.__fetching_queue.get(block=True, timeout=10)
-      self.__data_fetcher.Fetch(stock)
-      self.__fetching_queue.task_done()  # decrease the queue item in process
+      try:
+        self.__data_fetcher.Fetch(stock)
+      except Exception, e:
+        logging.error('Error in fetching %s(%s): %s', stock.code(), stock.name(), e)
+      finally:
+        self.__fetching_queue.task_done()  # decrease the queue item in process
 
 
 def main():

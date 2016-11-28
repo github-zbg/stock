@@ -39,7 +39,6 @@ class DataInsights(object):
     datafile = os.path.join(self._directory, '%s.refined.csv' % stock.code())
     reader = csv.DictReader(open(datafile))
 
-    # convert the seasonal metrics data into floats
     seasons = list(reader.fieldnames)[1:]  # keep only the dates
     seasons.sort(reverse=True)  # the latest season first
     if self._insight_date.isoformat() not in seasons:
@@ -64,7 +63,12 @@ class DataInsights(object):
       if not metrics_function:
         continue
 
-      logging.info('Running stats for %s', metrics_name)
+      if not row[self._insight_date.isoformat()]:
+        logging.warning('%s(%s) has no data on season %s for insighting %s.',
+            stock.code(), stock.name(), self._insight_date.isoformat(), metrics_name)
+        continue
+
+      logging.info('Running stats for %s(%s) on %s', stock.code(), stock.name(), metrics_name)
       # list of (season, value)
       seasonal_data = [(s, float(row[s])) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else (s, None)
           for s in seasons]
