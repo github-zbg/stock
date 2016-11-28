@@ -75,112 +75,98 @@ class DataInsights(object):
     return insight_data
 
   def _DoRevenueGrowthStats(self, stock, seasonal_data):
-    # stats column -> value
-    result = {
-        'revenue_growth_at_season': None,
-        '2year_revenue_growth_mean': None,
-        '2year_revenue_growth_lower': None,
-        '2year_revenue_growth_upper': None,
-        '2year_revenue_growth_quantile': None,
-        '3year_revenue_growth_mean': None,
-        '3year_revenue_growth_lower': None,
-        '3year_revenue_growth_upper': None,
-        '3year_revenue_growth_quantile': None,
-    }
-
+    """ seasonal_data is list of (season, value)
+    """
     season_index = self._GetInsightDateIndex(seasonal_data)
     if season_index < 0:
       return result
 
+    # number of pervious seasons to consider and t-dist constants
+    # list of (num_of_perious_seasons, t-dist)
+    periods_configs = [
+      # 8 seasons
+      # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
+      # 12 seasons
+      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010)]),
+    ]
+
+    # stats column -> value
+    result = {
+        'revenue_growth_at_season': None,
+    }
+
     data_at_season = seasonal_data[season_index][1]
-    result['revenue_growth_at_season'] = data_at_season
+    result['revenue_growth_at_season'] = round(data_at_season, 2)
 
-    data_8seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 9] if v[1]]
-    if len(data_8seasons) < 8:
-      logging.info('%s(%s) has no enough data for 8 seasons revenue growth CI before %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
-    else:
-      # CI by 2 years data
-      t7_list = [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]
-      (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
-          data_at_season, data_8seasons, t7_list)
+    for num, t_list in periods_configs:
       result.update({
-        '2year_revenue_growth_mean': mean,
-        '2year_revenue_growth_lower': lower,
-        '2year_revenue_growth_upper': upper,
-        '2year_revenue_growth_quantile': quantile,
+        '%dseasons_revenue_growth_mean' % num: None,
+        '%dseasons_revenue_growth_lower' % num: None,
+        '%dseasons_revenue_growth_upper' % num: None,
+        '%dseasons_revenue_growth_quantile' % num: None,
       })
 
-    data_12seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 13] if v[1]]
-    if len(data_12seasons) < 12:
-      logging.info('%s(%s) has no enough data for 12 seasons revenue growth CI before %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
-    else:
-      # CI by 3 years data
-      t11_list = [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010)]
-      (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
-          data_at_season, data_12seasons, t11_list)
-      result.update({
-        '3year_revenue_growth_mean': mean,
-        '3year_revenue_growth_lower': lower,
-        '3year_revenue_growth_upper': upper,
-        '3year_revenue_growth_quantile': quantile,
-      })
+      previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
+      if len(previous_seasons) < num:
+        logging.info('%s(%s) has no enough data for %d seasons revenue growth CI before %s',
+            stock.code(), stock.name(), num, self._insight_date.isoformat())
+      else:
+        # CI by the previous seasons data
+        (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
+            data_at_season, previous_seasons, t_list)
+        result.update({
+          '%dseasons_revenue_growth_mean' % num: round(mean, 2),
+          '%dseasons_revenue_growth_lower' % num: round(lower, 2),
+          '%dseasons_revenue_growth_upper' % num: round(upper, 2),
+          '%dseasons_revenue_growth_quantile' % num: round(quantile, 1),
+        })
 
     return result
 
   def _DoPEStats(self, stock, seasonal_data):
-    # stats column -> value
-    result = {
-        'PE_at_season': None,
-        '2year_PE_mean': None,
-        '2year_PE_lower': None,
-        '2year_PE_upper': None,
-        '2year_PE_quantile': None,
-        '3year_PE_mean': None,
-        '3year_PE_lower': None,
-        '3year_PE_upper': None,
-        '3year_PE_quantile': None,
-    }
-
     season_index = self._GetInsightDateIndex(seasonal_data)
     if season_index < 0:
       return result
 
+    # number of pervious seasons to consider and t-dist constants
+    # list of (num_of_perious_seasons, t-dist)
+    periods_configs = [
+      # 8 seasons
+      # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
+      # 12 seasons
+      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010)]),
+    ]
+
+    # stats column -> value
+    result = {
+        'PE_at_season': None,
+    }
+
     data_at_season = seasonal_data[season_index][1]
-    result['PE_at_season'] = data_at_season
+    result['PE_at_season'] = round(data_at_season, 1)
 
-    data_8seasons = [t[1] for t in seasonal_data[season_index + 1 : season_index + 9] if t[1]]
-    if len(data_8seasons) < 8:
-      logging.info('%s(%s) has no enough data for 8 seasons PE CI before %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
-    else:
-      # CI by 2 years data
-      t7_list = [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]
-      (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
-          data_at_season, data_8seasons, t7_list)
+    for num, t_list in periods_configs:
       result.update({
-        '2year_PE_mean': mean,
-        '2year_PE_lower': lower,
-        '2year_PE_upper': upper,
-        '2year_PE_quantile': quantile,
+        '%dseasons_PE_mean' % num: None,
+        '%dseasons_PE_lower' % num: None,
+        '%dseasons_PE_upper' % num: None,
+        '%dseasons_PE_quantile' % num: None,
       })
 
-    data_12seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 13] if v[1]]
-    if len(data_12seasons) < 12:
-      logging.info('%s(%s) has no enough data for 12 seasons PE CI before %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
-    else:
-      # CI by 3 years data
-      t11_list = [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010)]
-      (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
-          data_at_season, data_12seasons, t11_list)
-      result.update({
-        '3year_PE_mean': mean,
-        '3year_PE_lower': lower,
-        '3year_PE_upper': upper,
-        '3year_PE_quantile': quantile,
-      })
+      previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
+      if len(previous_seasons) < num:
+        logging.info('%s(%s) has no enough data for %d seasons PE CI before %s',
+            stock.code(), stock.name(), num, self._insight_date.isoformat())
+      else:
+        # CI by previous seasons data
+        (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
+            data_at_season, previous_seasons, t_list)
+        result.update({
+          '%dseasons_PE_mean' % num: round(mean, 1),
+          '%dseasons_PE_lower' % num: round(lower, 1),
+          '%dseasons_PE_upper' % num: round(upper, 1),
+          '%dseasons_PE_quantile' % num: round(quantile, 1),
+        })
 
     return result
 
@@ -193,8 +179,13 @@ class DataInsights(object):
     mean = lower = upper = None
     for q, t in t_list:
       mean, lower, upper = self._AverageWithCI(past_metrics, t)
-      if not quantile and (season_metrics > upper or season_metrics < lower):
-        quantile = (1.0 - (1.0 - q) / 2.0) * 100.0
+      if not quantile:
+        if season_metrics > upper:
+          # top ones
+          quantile = (1.0 - (1.0 - q) / 2.0) * 100.0
+        elif season_metrics < lower:
+          # tail ones
+          quantile = (1.0 - q) / 2.0 * 100.0
     if not quantile:
       quantile = 50.0  # means random
     return (mean, lower, upper, quantile)
