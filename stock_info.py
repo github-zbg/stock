@@ -18,15 +18,21 @@ flags.ArgParser().add_argument(
 
 
 class Stock(object):
-  def __init__(self, code, name):
+  def __init__(self, code, name, industry, ipo_date):
     self.__code = code
     self.__name = name
+    self.__industry = industry
+    self.__ipo_date = ipo_date
 
   def code(self):
     return self.__code
 
   def name(self):
     return self.__name
+  def industry(self):
+    return self.__industry
+  def ipo_date(self):
+    return self.__ipo_date
 
 
 def LoadAllStocks():
@@ -34,6 +40,8 @@ def LoadAllStocks():
   """
   code_column = u'A股代码'.encode('GBK')
   name_column = u'A股简称'.encode('GBK')
+  industry_column = u'2012年行业名称'.encode('GBK')
+  ipo_date_column = u'上市日期'.encode('GBK')
   all_stocks = {}
   for stock_file in FLAGS.stock_list.split(','):
     stock_file = stock_file.strip()
@@ -44,12 +52,16 @@ def LoadAllStocks():
     for row in reader:
       code = row.get(code_column, '')
       name = row.get(name_column, '')
+      industry = row.get(industry_column, '')
+      ipo_date = row.get(ipo_date_column, '')
       code = code.strip().decode('GBK').encode('UTF8')
       name = name.strip().decode('GBK').encode('UTF8')
+      industry = industry.strip().decode('GBK').encode('UTF8')
+      ipo_date = ipo_date.strip().decode('GBK').encode('UTF8')
       if not code or not name:
         continue
       # logging.info('stock: "%s", name: "%s"', code, name)
-      stock = Stock(code, name)
+      stock = Stock(code, name, industry, ipo_date)
       all_stocks[code] = stock
 
   logging.info('Load %d stocks in all.', len(all_stocks))

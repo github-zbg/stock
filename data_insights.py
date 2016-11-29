@@ -56,6 +56,8 @@ class DataInsights(object):
         'Season': self._insight_date.isoformat(),
         'Code': stock.code(),
         'Name': stock.name(),
+        'Industry': stock.industry(),
+        'IPO': stock.ipo_date(),
     }
     for row in reader:
       metrics_name = row[metrics_column_name]

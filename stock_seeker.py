@@ -47,7 +47,7 @@ def _GetDataDirectory():
 
 def _GetHeader(column_map):
   # special columns in order
-  special = ['Code', 'Name', 'Season']
+  special = ['Code', 'Name', 'Industry', 'IPO', 'Season',]
   special_set = set(special)
 
   header = []
@@ -68,7 +68,8 @@ def RunData():
   # load a map of {code -> stock}
   stocks = stock_info.LoadAllStocks()
   # randomly pick 10 stocks
-  stock_list = [stocks[c] for c in stocks.keys()[:10] ]
+  # stock_list = [stocks[c] for c in stocks.keys()[:10] ]
+  stock_list = stocks.values()
 
   directory = _GetDataDirectory()
   logging.info('Data directory: %s', directory)
