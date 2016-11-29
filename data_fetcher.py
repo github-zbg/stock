@@ -145,10 +145,10 @@ class NeteaseFetcher(DataFetcher):
       eps = seasonal_eps.get(season_string)
       # how to convert seasonal eps to annual eps
       multiplier = {3: 4.0, 6: 2.0, 9: 4.0 / 3.0, 12: 1.0}
-      if eps and abs(eps) > 1e-6:
+      if eps is not None and eps > 1e-4:
         eps *= multiplier[season.month]
-      else:
-        eps = None
+      elif eps is not None:
+        eps = 1e-4  # negative or 0 eps
       pe = price / eps if price and eps else None
       seasonal_pe[season_string] = pe
     refined_metrics_data['PE'] = seasonal_pe
@@ -204,18 +204,33 @@ class NeteaseFetcher(DataFetcher):
 
   def _GetSeasonalPrice(self, all_prices, seasons):
     """ Retuns {season -> average price}. """
+    earliest_day = min(all_prices.keys())
     seasonal_price = {}
     for season_end in seasons:
       season_start = date_util.GetSeasonStartDate(season_end)
       day = season_start
+      last_price = self._GetPriceOnDay(all_prices, day, earliest_day)
       prices = []
       while day <= season_end:
-        p = all_prices.get(day.isoformat(), 0.0)
-        if p > 1e-6:
-          prices.append(p)
+        p = all_prices.get(day.isoformat())
+        if p is not None:  # only count weekdays, on weekends p is None.
+          p = p if p > 1e-6 else last_price
+          if p > 1e-6:
+            prices.append(p)
+            last_price = p
         day += datetime.timedelta(days=1)
       seasonal_price[season_end.isoformat()] = (sum(prices) / len(prices) if len(prices) else None)
     return seasonal_price
+
+  def _GetPriceOnDay(self, all_prices, day, earliest_day):
+    """ Returns the market price on a specific day. Returns the price of previous days
+    if the stock does not trade on that day.
+    """
+    p = all_prices.get(day.isoformat(), 0.0)
+    while p <= 1e-6 and day.isoformat() > earliest_day:
+      day -= datetime.timedelta(days=1)  # the previous day
+      p = all_prices.get(day.isoformat(), 0.0)
+    return p if p > 1e-6 else 0.0
 
 
 # Netease per season data fetcher
@@ -259,7 +274,7 @@ def main():
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
-  stock = Stock('000977', '浪潮信息')
+  stock = Stock('600789', '鲁抗医药', '医药', '2001-01-01')
   fetcher = NeteaseSeasonFetcher(directory)
   fetcher.Fetch(stock)
 
