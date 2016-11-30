@@ -80,7 +80,7 @@ def RunData():
   batch.Fetch(stock_list)
   logging.info('Batch data fetching completed')
 
-  logging.info('Start data insighs')
+  logging.info('Start data insights')
   insighter = data_insights.DataInsights(directory)
   row_of_insights = []
   for stock in stock_list:

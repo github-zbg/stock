@@ -15,10 +15,12 @@ import date_util
 import stock_info
 
 FLAGS = flags.FLAGS
-flags.ArgParser().add_argument('--skip_fetching_data', default=False, action='store_true',
-    help='If set, totally skip fetching raw data from url.')
+flags.ArgParser().add_argument('--skip_fetching_raw_data', default=False, action='store_true',
+    help='If set, totally skip fetching raw data from data sources.')
 flags.ArgParser().add_argument('--force_refetch', default=False, action='store_true',
-    help='If set, always refetch the data even if it already exists.')
+    help='If set, always refetch the raw data even if it already exists.')
+flags.ArgParser().add_argument('--force_refine', default=False, action='store_true',
+    help='If set, always refine the raw data even if the result already exists.')
 
 Stock = stock_info.Stock
 
@@ -67,13 +69,12 @@ class NeteaseFetcher(DataFetcher):
     # setup the sources of a certain stock
     data_sources = self._SetupDataSources(stock)
     # fetch the raw data
-    self._FetchFromSources(stock, data_sources)
+    if not FLAGS.skip_fetching_raw_data:
+      self._FetchFromSources(stock, data_sources)
     # process and calculate some derived data
     self._RefineData(stock)
 
   def _FetchFromSources(self, stock, data_sources):
-    if FLAGS.skip_fetching_data:
-      return
     logging.info('Fetching %s(%s) ...', stock.code(), stock.name())
     for page_name in self._data_pages:
       page_url = data_sources.get(page_name)
@@ -106,6 +107,12 @@ class NeteaseFetcher(DataFetcher):
     f.close()
 
   def _RefineData(self, stock):
+    refine_output = os.path.join(self._directory, '%s.refined.csv' % stock.code())
+    if not FLAGS.force_refine and os.path.exists(refine_output):
+      logging.info('%s exists. Skip refining %s(%s)',
+          refine_output, stock.code(), stock.name())
+      return
+
     logging.info('Refining %s(%s) ...', stock.code(), stock.name())
     seasons_in_string = [season.isoformat() for season in self._reporting_seasons]
     # {seasons_end -> {metrics -> value} }
@@ -157,9 +164,7 @@ class NeteaseFetcher(DataFetcher):
     metrics_column = u'指标'.encode('UTF8')
     # the columns are in this order.
     header = [metrics_column] + seasons_in_string
-    writer = csv.DictWriter(
-        open(os.path.join(self._directory, '%s.refined.csv' % stock.code()), 'w'),
-        fieldnames=header)
+    writer = csv.DictWriter(open(refine_output, 'w'), fieldnames=header)
     writer.writeheader()
     for metrics_name, values in refined_metrics_data.iteritems():
       row = {metrics_column: metrics_name}
