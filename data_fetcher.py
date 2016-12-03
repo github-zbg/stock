@@ -124,7 +124,8 @@ class NeteaseFetcher(DataFetcher):
     metrics_names_for_growth = [
         u'主营业务收入(万元)@main_metrics'.encode('UTF8'),
         u'基本每股收益(元)@main_metrics'.encode('UTF8'),
-        # u'经营活动产生的现金流量净额(万元)',
+        u'净利润(万元)@main_metrics'.encode('UTF8'),
+        u'经营活动产生的现金流量净额(万元)@main_metrics'.encode('UTF8'),
     ]
 
     for metrics_name in metrics_names_for_growth:
@@ -142,10 +143,28 @@ class NeteaseFetcher(DataFetcher):
       refined_metrics_data[refined_name + '_growth'] = dict(zip(seasons_in_string, growth_data))
 
     # calculate PE.
-    price_history = self._LoadAllPrices(stock)
+    seasonal_pe = self._CalculatePeFromEps(stock, refined_metrics_data)
+    refined_metrics_data['PE'] = seasonal_pe
+    seasonal_pe = self._CalculatePeFromMarketValue(stock, refined_metrics_data)
+    refined_metrics_data['PE_MV'] = seasonal_pe
+
+    # write csv
+    metrics_column = u'指标'.encode('UTF8')
+    # the columns are in this order.
+    header = [metrics_column] + seasons_in_string
+    writer = csv.DictWriter(open(refine_output, 'w'), fieldnames=header)
+    writer.writeheader()
+    for metrics_name, values in refined_metrics_data.iteritems():
+      row = {metrics_column: metrics_name}
+      row.update(values)
+      writer.writerow(row)
+
+  def _CalculatePeFromEps(self, stock, refined_metrics_data):
+    seasonal_pe = {}
+    price_column = u'收盘价'.encode('GBK')
+    price_history = self._LoadAllPrices(stock, price_column)
     seasonal_price = self._GetSeasonalPrice(price_history, self._reporting_seasons)
     seasonal_eps = refined_metrics_data.get(u'基本每股收益(元)'.encode('UTF8'))
-    seasonal_pe = {}
     for season in self._reporting_seasons:
       season_string = season.isoformat()
       price = seasonal_price.get(season_string)
@@ -158,18 +177,29 @@ class NeteaseFetcher(DataFetcher):
         eps = 1e-4  # negative or 0 eps
       pe = price / eps if price and eps else None
       seasonal_pe[season_string] = pe
-    refined_metrics_data['PE'] = seasonal_pe
+    return seasonal_pe
 
-    # write csv
-    metrics_column = u'指标'.encode('UTF8')
-    # the columns are in this order.
-    header = [metrics_column] + seasons_in_string
-    writer = csv.DictWriter(open(refine_output, 'w'), fieldnames=header)
-    writer.writeheader()
-    for metrics_name, values in refined_metrics_data.iteritems():
-      row = {metrics_column: metrics_name}
-      row.update(values)
-      writer.writerow(row)
+  def _CalculatePeFromMarketValue(self, stock, refined_metrics_data):
+    seasonal_pe = {}
+    price_column = u'总市值'.encode('GBK')
+    mv_history = self._LoadAllPrices(stock, price_column)
+    seasonal_mv = self._GetSeasonalPrice(mv_history, self._reporting_seasons)
+    seasonal_income = refined_metrics_data.get(u'净利润(万元)'.encode('UTF8'))
+    for season in self._reporting_seasons:
+      season_string = season.isoformat()
+      price = seasonal_mv.get(season_string) / 10000.0  # convert to 10K
+      eps = seasonal_income.get(season_string)
+      # how to convert seasonal eps to annual eps
+      multiplier = {3: 4.0, 6: 2.0, 9: 4.0 / 3.0, 12: 1.0}
+      if eps is not None and eps > 1e-4:
+        eps *= multiplier[season.month]
+      elif eps is not None:
+        eps = 1e-4  # negative or 0 eps
+      pe = price / eps if price and eps else None
+      if pe is not None:
+        pe = min(pe, 2000)  # cap PE to 2000
+      seasonal_pe[season_string] = pe
+    return seasonal_pe
 
   def _LoadFullRawData(self, stock, seasons_end):
     full_data = {}  # {seasons_end -> {metrics -> value} }
@@ -196,12 +226,11 @@ class NeteaseFetcher(DataFetcher):
           value = float(value_string)
         per_season_data.update({metrics_name: value})
 
-  def _LoadAllPrices(self, stock):
+  def _LoadAllPrices(self, stock, price_column):
     """ Retuns {date(string) -> price(float)}. """
     pricefile = os.path.join(self._directory, '%s.price_history.csv' % stock.code())
     reader = csv.DictReader(open(pricefile))
     date_column = u'日期'.encode('GBK')
-    price_column = u'收盘价'.encode('GBK')
     all_prices = {}
     for row in reader:
       all_prices[row[date_column]] = float(row[price_column])
@@ -279,7 +308,8 @@ def main():
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
-  stock = Stock('600789', '鲁抗医药', '医药', '2001-01-01')
+  # stock = Stock('600789', '鲁抗医药', '医药', '2001-01-01')
+  stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
   fetcher = NeteaseSeasonFetcher(directory)
   fetcher.Fetch(stock)
 
