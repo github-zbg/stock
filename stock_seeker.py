@@ -47,7 +47,7 @@ def _GetDataDirectory():
 
 def _GetHeader(column_map):
   # special columns in order
-  special = ['Code', 'Name', 'Industry', 'IPO', 'Season',]
+  special = ['Code', 'Name', 'Industry', 'IPO', 'Season', 'MarketValue_at_season',]
   special_set = set(special)
 
   header = []

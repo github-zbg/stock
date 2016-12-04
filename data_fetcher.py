@@ -127,7 +127,6 @@ class NeteaseFetcher(DataFetcher):
         u'净利润(万元)@main_metrics'.encode('UTF8'),
         u'经营活动产生的现金流量净额(万元)@main_metrics'.encode('UTF8'),
     ]
-
     for metrics_name in metrics_names_for_growth:
       metrics_data = [full_raw_data[season].get(metrics_name)
           for season in seasons_in_string]
@@ -148,6 +147,10 @@ class NeteaseFetcher(DataFetcher):
     seasonal_pe = self._CalculatePeFromMarketValue(stock, refined_metrics_data)
     refined_metrics_data['PE_MV'] = seasonal_pe
 
+    # calculate market value
+    seasonal_market_value = self._GetSeasonalMarketValue(stock)
+    refined_metrics_data['MV'] = seasonal_market_value
+
     # write csv
     metrics_column = u'指标'.encode('UTF8')
     # the columns are in this order.
@@ -163,7 +166,7 @@ class NeteaseFetcher(DataFetcher):
     seasonal_pe = {}
     price_column = u'收盘价'.encode('GBK')
     price_history = self._LoadAllPrices(stock, price_column)
-    seasonal_price = self._GetSeasonalPrice(price_history, self._reporting_seasons)
+    seasonal_price = self._GetSeasonalAveragePrice(price_history, self._reporting_seasons)
     seasonal_eps = refined_metrics_data.get(u'基本每股收益(元)'.encode('UTF8'))
     for season in self._reporting_seasons:
       season_string = season.isoformat()
@@ -183,7 +186,7 @@ class NeteaseFetcher(DataFetcher):
     seasonal_pe = {}
     price_column = u'总市值'.encode('GBK')
     mv_history = self._LoadAllPrices(stock, price_column)
-    seasonal_mv = self._GetSeasonalPrice(mv_history, self._reporting_seasons)
+    seasonal_mv = self._GetSeasonalAveragePrice(mv_history, self._reporting_seasons)
     seasonal_income = refined_metrics_data.get(u'净利润(万元)'.encode('UTF8'))
     for season in self._reporting_seasons:
       season_string = season.isoformat()
@@ -200,6 +203,17 @@ class NeteaseFetcher(DataFetcher):
         pe = min(pe, 2000)  # cap PE to 2000
       seasonal_pe[season_string] = pe
     return seasonal_pe
+
+  def _GetSeasonalMarketValue(self, stock):
+    """ Retuns {season -> market value}. """
+    mv_column = u'总市值'.encode('GBK')
+    mv_history = self._LoadAllPrices(stock, mv_column)
+    earliest_day = min(mv_history.keys())
+    seasonal_mv = {}
+    for season in self._reporting_seasons:
+      mv = self._GetPriceOnDay(mv_history, season, earliest_day)
+      seasonal_mv[season.isoformat()] = mv
+    return seasonal_mv
 
   def _LoadFullRawData(self, stock, seasons_end):
     full_data = {}  # {seasons_end -> {metrics -> value} }
@@ -236,7 +250,7 @@ class NeteaseFetcher(DataFetcher):
       all_prices[row[date_column]] = float(row[price_column])
     return all_prices
 
-  def _GetSeasonalPrice(self, all_prices, seasons):
+  def _GetSeasonalAveragePrice(self, all_prices, seasons):
     """ Retuns {season -> average price}. """
     earliest_day = min(all_prices.keys())
     seasonal_price = {}

@@ -49,6 +49,7 @@ class DataInsights(object):
     metrics_functions = {
         u'主营业务收入(万元)_growth'.encode('UTF8'): self._DoRevenueGrowthStats,
         u'PE'.encode('UTF8'): self._DoPEStats,
+        u'MV'.encode('UTF8'): self._GetMarketValue,
     }
 
     # The data to return: column -> value
@@ -79,6 +80,22 @@ class DataInsights(object):
 
     logging.info('Insighting %s(%s) done.', stock.code(), stock.name())
     return insight_data
+
+  def _GetMarketValue(self, stock, seasonal_data):
+    """ seasonal_data is list of (season, value)
+    """
+    season_index = self._GetInsightDateIndex(seasonal_data)
+    mv = None
+    if season_index < 0:
+      logging.info('No market value found for %s(%s) on %s',
+          stock.code(), stock.name(), self._insight_date.isoformat())
+    else:
+      mv = seasonal_data[season_index][1]
+      if mv >= 1e8:
+        mv = '%.1f亿' % (mv / 1e8)
+      else:
+        mv = '%.1f万' % (mv / 1e4)
+    return {'MarketValue_at_season': mv}
 
   def _DoRevenueGrowthStats(self, stock, seasonal_data):
     """ seasonal_data is list of (season, value)
@@ -233,7 +250,7 @@ def main():
 
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
-  stock = Stock('000977', '浪潮信息')
+  stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
   insighter = DataInsights(directory)
   stats = insighter.DoStats(stock)
 
