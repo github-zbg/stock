@@ -24,6 +24,35 @@ flags.ArgParser().add_argument(
     help='The time to do insights: YYYY-03-31, YYYY-06-30, YYYY-09-30, YYYY-12-31.')
 
 
+class InsightData(object):
+  def __init__(self):
+    self._columns = []  # the data can be output in columns order
+    self._data = {}
+
+  def AddColumns(self, cols):
+    for c in cols:
+      assert not c in self._columns  # no duplicate columns
+    self._columns += cols
+    return self
+
+  def UpdateData(self, data_map):
+    for k in data_map.keys():
+      assert k in self._columns  # column should be registered
+    self._data.update(data_map)
+    return self
+
+  def Merge(self, other):
+    self.AddColumns(other.columns())
+    self.UpdateData(other.data())
+    return self
+
+  def columns(self):
+    return self._columns
+
+  def data(self):
+    return self._data
+
+
 # Calculate insights for each stock
 class DataInsights(object):
   def __init__(self, directory):
@@ -53,14 +82,18 @@ class DataInsights(object):
         u'MV'.encode('UTF8'): self._GetMarketValue,
     }
 
-    # The data to return: column -> value
-    insight_data = {
+    # The insight data to return
+    insight_data = InsightData()
+    insight_data.AddColumns(['Code', 'Name', 'Industry', 'IPO', 'Season'])
+    insight_data.UpdateData({
         'Season': self._insight_date.isoformat(),
         'Code': stock.code(),
         'Name': stock.name(),
         'Industry': stock.industry(),
         'IPO': stock.ipo_date(),
-    }
+    })
+
+    metrics_insight = {}  # The insight for each metrics
     for row in reader:
       metrics_name = row[metrics_column_name]
       metrics_function = metrics_functions.get(metrics_name)
@@ -76,9 +109,18 @@ class DataInsights(object):
       # list of (season, value)
       seasonal_data = [(s, float(row[s])) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else (s, None)
           for s in seasons]
-      stats = metrics_function(stock, seasonal_data)
-      insight_data.update(stats)
+      metrics_insight[metrics_name] = metrics_function(stock, seasonal_data)
 
+    insight_order = [
+        u'MV'.encode('UTF8'),
+        u'主营业务收入(万元)_growth'.encode('UTF8'),
+        u'PE_MV'.encode('UTF8'),
+        u'PB_MV'.encode('UTF8'),
+    ]
+    for metrics in insight_order:
+      insight = metrics_insight.get(metrics)
+      if insight:
+        insight_data.Merge(insight)
     logging.info('Insighting %s(%s) done.', stock.code(), stock.name())
     return insight_data
 
@@ -96,14 +138,22 @@ class DataInsights(object):
         mv = '%.1f亿' % (mv / 1e8)
       else:
         mv = '%.1f万' % (mv / 1e4)
-    return {'MarketValue_at_season': mv}
+    insight = InsightData()
+    insight.AddColumns(['MarketValue_at_season'])
+    insight.UpdateData({'MarketValue_at_season': mv})
+    return insight
 
   def _DoRevenueGrowthStats(self, stock, seasonal_data):
     """ seasonal_data is list of (season, value)
     """
+    insight = InsightData()
     season_index = self._GetInsightDateIndex(seasonal_data)
     if season_index < 0:
-      return result
+      return insight
+
+    data_at_season = seasonal_data[season_index][1]
+    insight.AddColumns(['revenue_growth_at_season'])
+    insight.UpdateData({'revenue_growth_at_season': round(data_at_season, 2)})
 
     # number of pervious seasons to consider and t-dist constants
     # list of (num_of_perious_seasons, t-dist)
@@ -111,24 +161,16 @@ class DataInsights(object):
       # 8 seasons
       # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
       # 12 seasons
-      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010)]),
+      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010), (0.9, 1.7959), (0.8, 1.3634)]),
     ]
 
-    # stats column -> value
-    result = {
-        'revenue_growth_at_season': None,
-    }
-
-    data_at_season = seasonal_data[season_index][1]
-    result['revenue_growth_at_season'] = round(data_at_season, 2)
-
     for num, t_list in periods_configs:
-      result.update({
-        '%dseasons_revenue_growth_mean' % num: None,
-        '%dseasons_revenue_growth_lower' % num: None,
-        '%dseasons_revenue_growth_upper' % num: None,
-        '%dseasons_revenue_growth_quantile' % num: None,
-      })
+      insight.AddColumns([
+        '%dseasons_revenue_growth_mean' % num,
+        '%dseasons_revenue_growth_lower' % num,
+        '%dseasons_revenue_growth_upper' % num,
+        '%dseasons_revenue_growth_quantile' % num,
+      ])
 
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
@@ -138,19 +180,26 @@ class DataInsights(object):
         # CI by the previous seasons data
         (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
             data_at_season, previous_seasons, t_list)
-        result.update({
+        insight.UpdateData({
           '%dseasons_revenue_growth_mean' % num: round(mean, 2),
           '%dseasons_revenue_growth_lower' % num: round(lower, 2),
           '%dseasons_revenue_growth_upper' % num: round(upper, 2),
           '%dseasons_revenue_growth_quantile' % num: round(quantile, 1),
         })
 
-    return result
+    return insight
 
   def _DoPEStats(self, stock, seasonal_data):
+    """ seasonal_data is list of (season, value)
+    """
+    insight = InsightData()
     season_index = self._GetInsightDateIndex(seasonal_data)
     if season_index < 0:
-      return result
+      return insight
+
+    data_at_season = seasonal_data[season_index][1]
+    insight.AddColumns(['PE_at_season'])
+    insight.UpdateData({'PE_at_season': round(data_at_season, 1)})
 
     # number of pervious seasons to consider and t-dist constants
     # list of (num_of_perious_seasons, t-dist)
@@ -158,24 +207,16 @@ class DataInsights(object):
       # 8 seasons
       # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
       # 12 seasons
-      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010)]),
+      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010), (0.9, 1.7959), (0.8, 1.3634)]),
     ]
 
-    # stats column -> value
-    result = {
-        'PE_at_season': None,
-    }
-
-    data_at_season = seasonal_data[season_index][1]
-    result['PE_at_season'] = round(data_at_season, 1)
-
     for num, t_list in periods_configs:
-      result.update({
-        '%dseasons_PE_mean' % num: None,
-        '%dseasons_PE_lower' % num: None,
-        '%dseasons_PE_upper' % num: None,
-        '%dseasons_PE_quantile' % num: None,
-      })
+      insight.AddColumns([
+        '%dseasons_PE_mean' % num,
+        '%dseasons_PE_lower' % num,
+        '%dseasons_PE_upper' % num,
+        '%dseasons_PE_quantile' % num,
+      ])
 
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
@@ -185,19 +226,26 @@ class DataInsights(object):
         # CI by previous seasons data
         (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
             data_at_season, previous_seasons, t_list)
-        result.update({
+        insight.UpdateData({
           '%dseasons_PE_mean' % num: round(mean, 1),
           '%dseasons_PE_lower' % num: round(lower, 1),
           '%dseasons_PE_upper' % num: round(upper, 1),
           '%dseasons_PE_quantile' % num: round(quantile, 1),
         })
 
-    return result
+    return insight
 
   def _DoPBStats(self, stock, seasonal_data):
+    """ seasonal_data is list of (season, value)
+    """
+    insight = InsightData()
     season_index = self._GetInsightDateIndex(seasonal_data)
     if season_index < 0:
-      return result
+      return insight
+
+    data_at_season = seasonal_data[season_index][1]
+    insight.AddColumns(['PB_at_season'])
+    insight.UpdateData({'PB_at_season': round(data_at_season, 1)})
 
     # number of pervious seasons to consider and t-dist constants
     # list of (num_of_perious_seasons, t-dist)
@@ -205,24 +253,16 @@ class DataInsights(object):
       # 8 seasons
       # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
       # 12 seasons
-      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010)]),
+      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010), (0.9, 1.7959), (0.8, 1.3634)]),
     ]
 
-    # stats column -> value
-    result = {
-        'PB_at_season': None,
-    }
-
-    data_at_season = seasonal_data[season_index][1]
-    result['PB_at_season'] = round(data_at_season, 1)
-
     for num, t_list in periods_configs:
-      result.update({
-        '%dseasons_PB_mean' % num: None,
-        '%dseasons_PB_lower' % num: None,
-        '%dseasons_PB_upper' % num: None,
-        '%dseasons_PB_quantile' % num: None,
-      })
+      insight.AddColumns([
+        '%dseasons_PB_mean' % num,
+        '%dseasons_PB_lower' % num,
+        '%dseasons_PB_upper' % num,
+        '%dseasons_PB_quantile' % num,
+      ])
 
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
@@ -232,14 +272,14 @@ class DataInsights(object):
         # CI by previous seasons data
         (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
             data_at_season, previous_seasons, t_list)
-        result.update({
+        insight.UpdateData({
           '%dseasons_PB_mean' % num: round(mean, 1),
           '%dseasons_PB_lower' % num: round(lower, 1),
           '%dseasons_PB_upper' % num: round(upper, 1),
           '%dseasons_PB_quantile' % num: round(quantile, 1),
         })
 
-    return result
+    return insight
 
   def _PastAverageAndQuantileInPast(self, season_metrics, past_metrics, t_list):
     """ Returns tuple of past average stats with CI and the season's quantile
@@ -249,12 +289,14 @@ class DataInsights(object):
     quantile = None  # by default
     mean = lower = upper = None
     for q, t in t_list:
-      mean, lower, upper = self._AverageWithCI(past_metrics, t)
+      m, l, u = self._AverageWithCI(past_metrics, t)
+      if abs(q - 0.95) < 1e-6:
+        mean, lower, upper = m, l, u
       if not quantile:
-        if season_metrics > upper:
+        if season_metrics > u:
           # top ones
           quantile = (1.0 - (1.0 - q) / 2.0) * 100.0
-        elif season_metrics < lower:
+        elif season_metrics < l:
           # tail ones
           quantile = (1.0 - q) / 2.0 * 100.0
     if not quantile:
@@ -300,12 +342,12 @@ def main():
   directory = './data/test'
   stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
   insighter = DataInsights(directory)
-  stats = insighter.DoStats(stock)
+  insight = insighter.DoStats(stock)
 
-  header = stats.keys()
+  header = insight.columns()
   writer = csv.DictWriter(sys.stdout, fieldnames=header)
   writer.writeheader()
-  writer.writerow(stats)
+  writer.writerow(insight.data())
 
 if __name__ == "__main__":
   main()

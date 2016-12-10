@@ -55,9 +55,7 @@ def _GetHeader(column_map):
     if col in column_map:
       header.append(col)
 
-  sorted_keys = column_map.keys()
-  sorted_keys.sort()  # ordered
-  for k in sorted_keys:
+  for k in column_map.keys():
     if k not in special_set:
       header.append(k)
 
@@ -92,10 +90,11 @@ def RunData():
     if FLAGS.insight_output:
       outfile = open(os.path.join(directory, FLAGS.insight_output), 'w')
 
-    header = _GetHeader(row_of_insights[0])
+    header = row_of_insights[0].columns()
     writer = csv.DictWriter(outfile, fieldnames=header)
     writer.writeheader()
-    writer.writerows(row_of_insights)
+    for insight in row_of_insights:
+      writer.writerow(insight.data())
 
 
 def main():
