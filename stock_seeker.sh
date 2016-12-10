@@ -6,6 +6,7 @@ insight_date="$1"
   --stock_list="~/stocklist.medical.csv" \
   --num_fetcher_threads="20" \
   --data_directory="./data" \
+  --force_refine \
   --insight_date="$insight_date" \
   --insight_output="insight.${insight_date}.csv"
 

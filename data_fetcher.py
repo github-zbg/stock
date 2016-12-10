@@ -126,6 +126,7 @@ class NeteaseFetcher(DataFetcher):
         u'基本每股收益(元)@main_metrics'.encode('UTF8'),
         u'净利润(万元)@main_metrics'.encode('UTF8'),
         u'经营活动产生的现金流量净额(万元)@main_metrics'.encode('UTF8'),
+        u'股东权益不含少数股东权益(万元)@main_metrics'.encode('UTF8'),
     ]
     for metrics_name in metrics_names_for_growth:
       metrics_data = [full_raw_data[season].get(metrics_name)
@@ -146,6 +147,10 @@ class NeteaseFetcher(DataFetcher):
     refined_metrics_data['PE'] = seasonal_pe
     seasonal_pe = self._CalculatePeFromMarketValue(stock, refined_metrics_data)
     refined_metrics_data['PE_MV'] = seasonal_pe
+
+    # calculate PB.
+    seasonal_pb = self._CalculatePbFromMarketValue(stock, refined_metrics_data)
+    refined_metrics_data['PB_MV'] = seasonal_pb
 
     # calculate market value
     seasonal_market_value = self._GetSeasonalMarketValue(stock)
@@ -190,19 +195,38 @@ class NeteaseFetcher(DataFetcher):
     seasonal_income = refined_metrics_data.get(u'净利润(万元)'.encode('UTF8'))
     for season in self._reporting_seasons:
       season_string = season.isoformat()
-      price = seasonal_mv.get(season_string) / 10000.0  # convert to 10K
-      eps = seasonal_income.get(season_string)
+      price = seasonal_mv.get(season_string)
+      eps = seasonal_income.get(season_string)  # note that the unit is 10K
       # how to convert seasonal eps to annual eps
       multiplier = {3: 4.0, 6: 2.0, 9: 4.0 / 3.0, 12: 1.0}
       if eps is not None and eps > 1e-4:
         eps *= multiplier[season.month]
       elif eps is not None:
         eps = 1e-4  # negative or 0 eps
-      pe = price / eps if price and eps else None
+      pe = price / 10000.0 / eps if price and eps else None
       if pe is not None:
         pe = min(pe, 2000)  # cap PE to 2000
       seasonal_pe[season_string] = pe
     return seasonal_pe
+
+  def _CalculatePbFromMarketValue(self, stock, refined_metrics_data):
+    seasonal_pb = {}
+    price_column = u'总市值'.encode('GBK')
+    mv_history = self._LoadAllPrices(stock, price_column)
+    seasonal_mv = self._GetSeasonalAveragePrice(mv_history, self._reporting_seasons)
+    seasonal_net_asset = refined_metrics_data.get(u'股东权益不含少数股东权益(万元)'.encode('UTF8'))
+    for season in self._reporting_seasons:
+      season_string = season.isoformat()
+      price = seasonal_mv.get(season_string)
+      asset = seasonal_net_asset.get(season_string)  # note that the unit is 10K
+      if asset is not None and asset <= 1e-4:
+        asset = 1.0  # negative or 0 asset
+
+      pb = price / 10000.0 / asset if price and asset else None
+      if pb is not None:
+        pb = min(pb, 2000)  # cap PB to 2000
+      seasonal_pb[season_string] = pb
+    return seasonal_pb
 
   def _GetSeasonalMarketValue(self, stock):
     """ Retuns {season -> market value}. """
@@ -323,7 +347,8 @@ def main():
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   # stock = Stock('600789', '鲁抗医药', '医药', '2001-01-01')
-  stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
+  # stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
+  stock = Stock('300039', '上海凯宝', '医药', '2011-01-01')
   fetcher = NeteaseSeasonFetcher(directory)
   fetcher.Fetch(stock)
 

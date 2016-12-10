@@ -48,7 +48,8 @@ class DataInsights(object):
     metrics_column_name = u'指标'.encode('UTF8')
     metrics_functions = {
         u'主营业务收入(万元)_growth'.encode('UTF8'): self._DoRevenueGrowthStats,
-        u'PE'.encode('UTF8'): self._DoPEStats,
+        u'PE_MV'.encode('UTF8'): self._DoPEStats,
+        u'PB_MV'.encode('UTF8'): self._DoPBStats,
         u'MV'.encode('UTF8'): self._GetMarketValue,
     }
 
@@ -189,6 +190,53 @@ class DataInsights(object):
           '%dseasons_PE_lower' % num: round(lower, 1),
           '%dseasons_PE_upper' % num: round(upper, 1),
           '%dseasons_PE_quantile' % num: round(quantile, 1),
+        })
+
+    return result
+
+  def _DoPBStats(self, stock, seasonal_data):
+    season_index = self._GetInsightDateIndex(seasonal_data)
+    if season_index < 0:
+      return result
+
+    # number of pervious seasons to consider and t-dist constants
+    # list of (num_of_perious_seasons, t-dist)
+    periods_configs = [
+      # 8 seasons
+      # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
+      # 12 seasons
+      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010)]),
+    ]
+
+    # stats column -> value
+    result = {
+        'PB_at_season': None,
+    }
+
+    data_at_season = seasonal_data[season_index][1]
+    result['PB_at_season'] = round(data_at_season, 1)
+
+    for num, t_list in periods_configs:
+      result.update({
+        '%dseasons_PB_mean' % num: None,
+        '%dseasons_PB_lower' % num: None,
+        '%dseasons_PB_upper' % num: None,
+        '%dseasons_PB_quantile' % num: None,
+      })
+
+      previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
+      if len(previous_seasons) < num:
+        logging.info('%s(%s) has no enough data for %d seasons PB CI before %s',
+            stock.code(), stock.name(), num, self._insight_date.isoformat())
+      else:
+        # CI by previous seasons data
+        (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
+            data_at_season, previous_seasons, t_list)
+        result.update({
+          '%dseasons_PB_mean' % num: round(mean, 1),
+          '%dseasons_PB_lower' % num: round(lower, 1),
+          '%dseasons_PB_upper' % num: round(upper, 1),
+          '%dseasons_PB_quantile' % num: round(quantile, 1),
         })
 
     return result
