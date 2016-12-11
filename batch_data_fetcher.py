@@ -31,6 +31,12 @@ class BatchDataFetcher:
     # the flag indicating all stocks have been put into queue.
     self.__all_stock_put = False;
 
+    # a few stats
+    self.__total_stock_num = 0
+    self.__processed_stock = 0
+    self.__success_stock = 0
+    self.__fail_stock = 0
+
   def Fetch(self, stock_list):
     if len(stock_list) == 0:
       return
@@ -45,6 +51,7 @@ class BatchDataFetcher:
     start_ts = datetime.datetime.now()
     for stock in stock_list:
       self.__fetching_queue.put(stock, block=True)
+      self.__total_stock_num += 1
 
     # all stocks put in the queue
     self.__all_stock_put = True
@@ -52,6 +59,8 @@ class BatchDataFetcher:
 
     end_ts = datetime.datetime.now()
     logging.info('Total time elapsed in fetching data: %s', str(end_ts - start_ts))
+    logging.info('Total stocks: %d, processed: %d, succeeded: %d, failed: %d',
+        self.__total_stock_num, self.__processed_stock, self.__success_stock, self.__fail_stock)
 
     for thread in self.__threads:
       thread.join(timeout=10)  # ensure all threads exit
@@ -61,10 +70,13 @@ class BatchDataFetcher:
     while not self.__all_stock_put or not self.__fetching_queue.empty():
       # block at most 10 seconds to get the next stock
       stock = self.__fetching_queue.get(block=True, timeout=10)
+      self.__processed_stock += 1
       try:
         self.__data_fetcher.Fetch(stock)
+        self.__success_stock += 1
       except Exception, e:
         logging.error('Error in fetching %s(%s): %s', stock.code(), stock.name(), e)
+        self.__fail_stock += 1
       finally:
         self.__fetching_queue.task_done()  # decrease the queue item in process
 

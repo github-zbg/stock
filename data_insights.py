@@ -58,7 +58,9 @@ class DataInsights(object):
   def __init__(self, directory):
     self._directory = directory
     # parse and check the insight date.
-    self._insight_date = datetime.datetime.strptime(FLAGS.insight_date, '%Y-%m-%d').date()
+    self._insight_date = date_util.GetLastSeasonEndDate(datetime.date.today())
+    if FLAGS.insight_date:
+      self._insight_date = datetime.datetime.strptime(FLAGS.insight_date, '%Y-%m-%d').date()
 
   # Calculate statistical insights
   def DoStats(self, stock):

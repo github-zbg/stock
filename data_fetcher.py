@@ -232,11 +232,12 @@ class NeteaseFetcher(DataFetcher):
     """ Retuns {season -> market value}. """
     mv_column = u'总市值'.encode('GBK')
     mv_history = self._LoadAllPrices(stock, mv_column)
-    earliest_day = min(mv_history.keys())
     seasonal_mv = {}
-    for season in self._reporting_seasons:
-      mv = self._GetPriceOnDay(mv_history, season, earliest_day)
-      seasonal_mv[season.isoformat()] = mv
+    if len(mv_history) > 0:
+      earliest_day = min(mv_history.keys())
+      for season in self._reporting_seasons:
+        mv = self._GetPriceOnDay(mv_history, season, earliest_day)
+        seasonal_mv[season.isoformat()] = mv
     return seasonal_mv
 
   def _LoadFullRawData(self, stock, seasons_end):
@@ -276,8 +277,11 @@ class NeteaseFetcher(DataFetcher):
 
   def _GetSeasonalAveragePrice(self, all_prices, seasons):
     """ Retuns {season -> average price}. """
-    earliest_day = min(all_prices.keys())
     seasonal_price = {}
+    if len(all_prices) == 0:
+      return seasonal_price
+
+    earliest_day = min(all_prices.keys())
     for season_end in seasons:
       season_start = date_util.GetSeasonStartDate(season_end)
       day = season_start
@@ -348,7 +352,8 @@ def main():
   directory = './data/test'
   # stock = Stock('600789', '鲁抗医药', '医药', '2001-01-01')
   # stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
-  stock = Stock('300039', '上海凯宝', '医药', '2011-01-01')
+  # stock = Stock('300039', '上海凯宝', '医药', '2011-01-01')
+  stock = Stock('000621', '*ST比特', 'Unknown', '2011-01-01')
   fetcher = NeteaseSeasonFetcher(directory)
   fetcher.Fetch(stock)
 

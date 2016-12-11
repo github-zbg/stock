@@ -3,7 +3,7 @@
 insight_date="$1"
 
 ./stock_seeker.py \
-  --stock_list="~/stocklist.medical.csv" \
+  --stock_list="~/stocklist.full.csv" \
   --num_fetcher_threads="20" \
   --data_directory="./data" \
   --insight_date="$insight_date" \
