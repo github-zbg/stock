@@ -22,7 +22,7 @@ def GetSeasonMonth(month):
   # 4,5,6 -> 4
   # 7,8,9 -> 7
   # 10,11,12 -> 10
-  return (month - 1) / 3 * 3 + 1
+  return int((month - 1) / 3) * 3 + 1
 
 
 def GetSeasonStartDate(day):

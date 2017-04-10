@@ -1,9 +1,14 @@
-#!/usr/bin/bash
+#!/bin/bash
+
+if [[ "$1" == "" ]]; then
+  echo "Usage: $0 <YYYY-MM-DD>"
+  exit 1
+fi
 
 insight_date="$1"
 
 ./stock_seeker.py \
-  --stock_list="~/stocklist.full.csv" \
+  --stock_list="./data/stocklist.full.csv" \
   --num_fetcher_threads="20" \
   --data_directory="./data" \
   --insight_date="$insight_date" \

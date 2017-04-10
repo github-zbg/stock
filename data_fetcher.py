@@ -351,9 +351,9 @@ def main():
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   # stock = Stock('600789', '鲁抗医药', '医药', '2001-01-01')
-  # stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
+  stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
   # stock = Stock('300039', '上海凯宝', '医药', '2011-01-01')
-  stock = Stock('000621', '*ST比特', 'Unknown', '2011-01-01')
+  # stock = Stock('000621', '*ST比特', 'Unknown', '2011-01-01')
   fetcher = NeteaseSeasonFetcher(directory)
   fetcher.Fetch(stock)
 

@@ -7,9 +7,11 @@ import csv
 import datetime
 import logging
 import math
+import numpy
 import os
 import re
 import sys
+from scipy import stats
 
 import flags
 import date_util
@@ -102,7 +104,7 @@ class DataInsights(object):
       if not metrics_function:
         continue
 
-      if not row[self._insight_date.isoformat()]:
+      if not row.has_key(self._insight_date.isoformat()):
         logging.warning('%s(%s) has no data on season %s for insighting %s.',
             stock.code(), stock.name(), self._insight_date.isoformat(), metrics_name)
         continue
@@ -157,16 +159,13 @@ class DataInsights(object):
     insight.AddColumns(['revenue_growth_at_season'])
     insight.UpdateData({'revenue_growth_at_season': round(data_at_season, 2)})
 
-    # number of pervious seasons to consider and t-dist constants
-    # list of (num_of_perious_seasons, t-dist)
+    # number of pervious seasons to consider
     periods_configs = [
-      # 8 seasons
-      # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
-      # 12 seasons
-      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010), (0.9, 1.7959), (0.8, 1.3634)]),
+      # 8,
+      12
     ]
 
-    for num, t_list in periods_configs:
+    for num in periods_configs:
       insight.AddColumns([
         '%dseasons_revenue_growth_mean' % num,
         '%dseasons_revenue_growth_lower' % num,
@@ -180,8 +179,8 @@ class DataInsights(object):
             stock.code(), stock.name(), num, self._insight_date.isoformat())
       else:
         # CI by the previous seasons data
-        (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
-            data_at_season, previous_seasons, t_list)
+        (mean, lower, upper, quantile) = self._PastAverageAndPercentInPast(
+            data_at_season, previous_seasons)
         insight.UpdateData({
           '%dseasons_revenue_growth_mean' % num: round(mean, 2),
           '%dseasons_revenue_growth_lower' % num: round(lower, 2),
@@ -203,16 +202,13 @@ class DataInsights(object):
     insight.AddColumns(['PE_at_season'])
     insight.UpdateData({'PE_at_season': round(data_at_season, 1)})
 
-    # number of pervious seasons to consider and t-dist constants
-    # list of (num_of_perious_seasons, t-dist)
+    # number of pervious seasons to consider
     periods_configs = [
-      # 8 seasons
-      # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
-      # 12 seasons
-      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010), (0.9, 1.7959), (0.8, 1.3634)]),
+      # 8,
+      12,
     ]
 
-    for num, t_list in periods_configs:
+    for num in periods_configs:
       insight.AddColumns([
         '%dseasons_PE_mean' % num,
         '%dseasons_PE_lower' % num,
@@ -226,8 +222,8 @@ class DataInsights(object):
             stock.code(), stock.name(), num, self._insight_date.isoformat())
       else:
         # CI by previous seasons data
-        (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
-            data_at_season, previous_seasons, t_list)
+        (mean, lower, upper, quantile) = self._PastAverageAndPercentInPast(
+            data_at_season, previous_seasons)
         insight.UpdateData({
           '%dseasons_PE_mean' % num: round(mean, 1),
           '%dseasons_PE_lower' % num: round(lower, 1),
@@ -249,16 +245,13 @@ class DataInsights(object):
     insight.AddColumns(['PB_at_season'])
     insight.UpdateData({'PB_at_season': round(data_at_season, 1)})
 
-    # number of pervious seasons to consider and t-dist constants
-    # list of (num_of_perious_seasons, t-dist)
+    # number of pervious seasons to consider
     periods_configs = [
-      # 8 seasons
-      # (8, [(0.99, 3.4995), (0.98, 2.9980), (0.95, 2.3646)]),
-      # 12 seasons
-      (12, [(0.99, 3.1058), (0.98, 2.7181), (0.95, 2.2010), (0.9, 1.7959), (0.8, 1.3634)]),
+      # 8,
+      12
     ]
 
-    for num, t_list in periods_configs:
+    for num in periods_configs:
       insight.AddColumns([
         '%dseasons_PB_mean' % num,
         '%dseasons_PB_lower' % num,
@@ -272,8 +265,8 @@ class DataInsights(object):
             stock.code(), stock.name(), num, self._insight_date.isoformat())
       else:
         # CI by previous seasons data
-        (mean, lower, upper, quantile) = self._PastAverageAndQuantileInPast(
-            data_at_season, previous_seasons, t_list)
+        (mean, lower, upper, quantile) = self._PastAverageAndPercentInPast(
+            data_at_season, previous_seasons)
         insight.UpdateData({
           '%dseasons_PB_mean' % num: round(mean, 1),
           '%dseasons_PB_lower' % num: round(lower, 1),
@@ -283,40 +276,28 @@ class DataInsights(object):
 
     return insight
 
-  def _PastAverageAndQuantileInPast(self, season_metrics, past_metrics, t_list):
+  def _PastAverageAndPercentInPast(self, season_metrics, past_metrics):
     """ Returns tuple of past average stats with CI and the season's quantile
     if put in the past. (mean, lower, upper, quantile_in_past).
-    Assumes t_list is tuple (quantile, t) in descending order: 99%, 98%, 95%, etc
     """
     quantile = None  # by default
     mean = lower = upper = None
-    for q, t in t_list:
-      m, l, u = self._AverageWithCI(past_metrics, t)
-      if abs(q - 0.95) < 1e-6:
-        mean, lower, upper = m, l, u
-      if not quantile:
-        if season_metrics > u:
-          # top ones
-          quantile = (1.0 - (1.0 - q) / 2.0) * 100.0
-        elif season_metrics < l:
-          # tail ones
-          quantile = (1.0 - q) / 2.0 * 100.0
-    if not quantile:
-      quantile = 50.0  # means random
-    return (mean, lower, upper, quantile)
 
-  def _AverageWithCI(self, metrics_data, t):
-    """ Returns (mean, lower, upper). """
-    refined_data = [d if d else 0.0 for d in metrics_data]
+    refined_data = [d if d else 0.0 for d in past_metrics]
     size = len(refined_data)
     mean = sum(refined_data) / float(size)
     # avg(x^2)
     square_mean = sum([i ** 2 for i in refined_data]) / float(size)
     s = math.sqrt((square_mean - mean ** 2) * float(size) / float(size - 1))
-    # assume subject to t distribution
+
+    # assume subject to t distribution, df=size-1, 95% confidence
+    t = stats.t.ppf(0.975, size - 1)
     lower = mean - t * s / math.sqrt(size)
     upper = mean + t * s / math.sqrt(size)
-    return (mean, lower, upper)
+
+    point = (season_metrics - mean) / (s / math.sqrt(size))
+    quantile = stats.t.cdf(point, size - 1) * 100.0
+    return (mean, lower, upper, quantile)
 
   def _GetInsightDateIndex(self, seasons):
     if len(seasons) == 0:
