@@ -20,6 +20,8 @@ import stock_info
 FLAGS = flags.FLAGS
 flags.ArgParser().add_argument('--data_directory', default='./data',
     help='The base directory of output.')
+flags.ArgParser().add_argument('--insight_stocks', default='',
+    help='Comma seperated stock codes to do insights.')
 flags.ArgParser().add_argument('--annual', default=False, action='store_true',
     help='Whether to run seasonal(default) or annual data.')
 flags.ArgParser().add_argument('--insight_output', default=None,
@@ -67,7 +69,8 @@ def RunData():
   stocks = stock_info.LoadAllStocks()
   # randomly pick 10 stocks
   # stock_list = [stocks[c] for c in stocks.keys()[:10] ]
-  stock_list = stocks.values()
+  stock_list = stocks.values() if not FLAGS.insight_stocks else [
+      stocks[code.strip()] for code in FLAGS.insight_stocks.split(',')]
 
   directory = _GetDataDirectory()
   logging.info('Data directory: %s', directory)
