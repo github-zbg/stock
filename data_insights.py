@@ -104,13 +104,8 @@ class DataInsights(object):
       if not metrics_function:
         continue
 
-      if not row.has_key(self._insight_date.isoformat()):
-        logging.warning('%s(%s) has no data on season %s for insighting %s.',
-            stock.code(), stock.name(), self._insight_date.isoformat(), metrics_name)
-        continue
-
       logging.info('Running stats for %s(%s) on %s', stock.code(), stock.name(), metrics_name)
-      # list of (season, value)
+      # list of (season, value), value could be None.
       seasonal_data = [(s, float(row[s])) if re.match(r'^-?\d+(\.\d+)?$', row[s]) else (s, None)
           for s in seasons]
       metrics_insight[metrics_name] = metrics_function(stock, seasonal_data)
@@ -129,21 +124,22 @@ class DataInsights(object):
     return insight_data
 
   def _GetMarketValue(self, stock, seasonal_data):
-    """ seasonal_data is list of (season, value)
+    """ seasonal_data is list of (season, value), value could be None.
     """
-    season_index = self._GetInsightDateIndex(seasonal_data)
-    mv = None
-    if season_index < 0:
-      logging.info('No market value found for %s(%s) on %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
-    else:
-      mv = seasonal_data[season_index][1]
-      if mv >= 1e8:
-        mv = '%.1f亿' % (mv / 1e8)
-      else:
-        mv = '%.1f万' % (mv / 1e4)
     insight = InsightData()
     insight.AddColumns(['MarketValue_at_season'])
+
+    season_index = self._GetInsightDateIndex(seasonal_data)
+    if season_index < 0 or seasonal_data[season_index][1] is None:
+      logging.info('No market value found for %s(%s) on %s',
+          stock.code(), stock.name(), self._insight_date.isoformat())
+      return insight
+
+    mv = seasonal_data[season_index][1]
+    if mv >= 1e8:
+      mv = '%.1f亿' % (mv / 1e8)
+    else:
+      mv = '%.1f万' % (mv / 1e4)
     insight.UpdateData({'MarketValue_at_season': mv})
     return insight
 
@@ -151,20 +147,8 @@ class DataInsights(object):
     """ seasonal_data is list of (season, value)
     """
     insight = InsightData()
-    season_index = self._GetInsightDateIndex(seasonal_data)
-    if season_index < 0:
-      return insight
-
-    data_at_season = seasonal_data[season_index][1]
     insight.AddColumns(['revenue_growth_at_season'])
-    insight.UpdateData({'revenue_growth_at_season': round(data_at_season, 2)})
-
-    # number of pervious seasons to consider
-    periods_configs = [
-      # 8,
-      12
-    ]
-
+    periods_configs = [12]  # number of pervious seasons to consider
     for num in periods_configs:
       insight.AddColumns([
         '%dseasons_revenue_growth_mean' % num,
@@ -173,6 +157,16 @@ class DataInsights(object):
         '%dseasons_revenue_growth_quantile' % num,
       ])
 
+    season_index = self._GetInsightDateIndex(seasonal_data)
+    if season_index < 0 or seasonal_data[season_index][1] is None:
+      logging.info('No revenue growth found for %s(%s) on %s',
+          stock.code(), stock.name(), self._insight_date.isoformat())
+      return insight
+
+    data_at_season = seasonal_data[season_index][1]
+    insight.UpdateData({'revenue_growth_at_season': round(data_at_season, 2)})
+
+    for num in periods_configs:
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
         logging.info('%s(%s) has no enough data for %d seasons revenue growth CI before %s',
@@ -194,20 +188,8 @@ class DataInsights(object):
     """ seasonal_data is list of (season, value)
     """
     insight = InsightData()
-    season_index = self._GetInsightDateIndex(seasonal_data)
-    if season_index < 0:
-      return insight
-
-    data_at_season = seasonal_data[season_index][1]
     insight.AddColumns(['PE_at_season'])
-    insight.UpdateData({'PE_at_season': round(data_at_season, 1)})
-
-    # number of pervious seasons to consider
-    periods_configs = [
-      # 8,
-      12,
-    ]
-
+    periods_configs = [12]  # number of pervious seasons to consider
     for num in periods_configs:
       insight.AddColumns([
         '%dseasons_PE_mean' % num,
@@ -216,6 +198,16 @@ class DataInsights(object):
         '%dseasons_PE_quantile' % num,
       ])
 
+    season_index = self._GetInsightDateIndex(seasonal_data)
+    if season_index < 0 or seasonal_data[season_index][1] is None:
+      logging.info('No PE found for %s(%s) on %s',
+          stock.code(), stock.name(), self._insight_date.isoformat())
+      return insight
+
+    data_at_season = seasonal_data[season_index][1]
+    insight.UpdateData({'PE_at_season': round(data_at_season, 1)})
+
+    for num in periods_configs:
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
         logging.info('%s(%s) has no enough data for %d seasons PE CI before %s',
@@ -237,20 +229,8 @@ class DataInsights(object):
     """ seasonal_data is list of (season, value)
     """
     insight = InsightData()
-    season_index = self._GetInsightDateIndex(seasonal_data)
-    if season_index < 0:
-      return insight
-
-    data_at_season = seasonal_data[season_index][1]
     insight.AddColumns(['PB_at_season'])
-    insight.UpdateData({'PB_at_season': round(data_at_season, 1)})
-
-    # number of pervious seasons to consider
-    periods_configs = [
-      # 8,
-      12
-    ]
-
+    periods_configs = [12]  # number of pervious seasons to consider
     for num in periods_configs:
       insight.AddColumns([
         '%dseasons_PB_mean' % num,
@@ -259,6 +239,16 @@ class DataInsights(object):
         '%dseasons_PB_quantile' % num,
       ])
 
+    season_index = self._GetInsightDateIndex(seasonal_data)
+    if season_index < 0 or seasonal_data[season_index][1] is None:
+      logging.info('No PB found for %s(%s) on %s',
+          stock.code(), stock.name(), self._insight_date.isoformat())
+      return insight
+
+    data_at_season = seasonal_data[season_index][1]
+    insight.UpdateData({'PB_at_season': round(data_at_season, 1)})
+
+    for num in periods_configs:
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
         logging.info('%s(%s) has no enough data for %d seasons PB CI before %s',
@@ -295,7 +285,10 @@ class DataInsights(object):
     lower = mean - t * s / math.sqrt(size)
     upper = mean + t * s / math.sqrt(size)
 
-    point = (season_metrics - mean) / (s / math.sqrt(size))
+    # s can be 0 when past_metrics are const.
+    point = (season_metrics - mean) * 100.0
+    if abs(s) > 1e-6:
+      point = (season_metrics - mean) / (s / math.sqrt(size))
     quantile = stats.t.cdf(point, size - 1) * 100.0
     return (mean, lower, upper, quantile)
 
