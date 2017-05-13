@@ -27,24 +27,33 @@ def GetSeasonMonth(month):
 
 def GetSeasonStartDate(day):
   """ Returns the season's start date of that day.
-      day: datetime.date
+  E.g. for 2017-05-13 it returns 2017-04-01.
+
+  Args:
+    day: datetime.date
   """
   return datetime.date(day.year, GetSeasonMonth(day.month), 1)
 
 
 def GetLastSeasonEndDate(day):
   """ Returns the last season's end date of that day.
-      day: datetime.date
+  E.g. for 2017-05-13 it returns 2017-03-31.
+
+  Args:
+    day: datetime.date
   """
   # season start is YYYY-01-01, YYYY-04-01, YYYY-07-01, YYYY-10-01
   season_start = GetSeasonStartDate(day)
   return GetLastDay(season_start)
 
 
-def GetLastNSeasonsStart(day, last_n):
-  """ Returns a list of last N seasons since that day.
-      day: datetime.date
-      last_n: int
+def GetLatestNSeasonsStart(day, last_n):
+  """ Returns a list of the latest N seasons till that day.
+  E.g. for 2017-05-13, it returns the latest 2 seasons: 2017-04-01, 2017-01-01.
+
+  Args:
+    day: datetime.date
+    last_n: int
   """
   assert last_n > 0
   season_month = [10, 7, 4, 1]

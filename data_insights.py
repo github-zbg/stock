@@ -22,11 +22,11 @@ Stock = stock_info.Stock
 FLAGS = flags.FLAGS
 flags.ArgParser().add_argument(
     '--insight_date',
-    default=date_util.GetLastSeasonEndDate(datetime.date.today()).isoformat(),
-    help='The time to do insights: YYYY-03-31, YYYY-06-30, YYYY-09-30, YYYY-12-31.')
+    help='The date to do insights: YYYY-mm-dd')
 
 
 class InsightData(object):
+  """ Contains {metrics_name -> value} and the order to output metrics."""
   def __init__(self):
     self._columns = []  # the data can be output in columns order
     self._data = {}
@@ -60,23 +60,24 @@ class DataInsights(object):
   def __init__(self, directory):
     self._directory = directory
     # parse and check the insight date.
-    self._insight_date = date_util.GetLastSeasonEndDate(datetime.date.today())
+    self._insight_date = datetime.date.today()
     if FLAGS.insight_date:
       self._insight_date = datetime.datetime.strptime(FLAGS.insight_date, '%Y-%m-%d').date()
+    self._insight_season = date_util.GetLastSeasonEndDate(self._insight_date)
 
   # Calculate statistical insights
   def DoStats(self, stock):
     logging.info('Insighting %s(%s) on season %s ...',
-        stock.code(), stock.name(), self._insight_date.isoformat())
+        stock.code(), stock.name(), self._insight_season.isoformat())
     # revenue from main business
     datafile = os.path.join(self._directory, '%s.refined.csv' % stock.code())
     reader = csv.DictReader(open(datafile))
 
     seasons = list(reader.fieldnames)[1:]  # keep only the dates
     seasons.sort(reverse=True)  # the latest season first
-    if self._insight_date.isoformat() not in seasons:
+    if self._insight_season.isoformat() not in seasons:
       logging.warning('%s(%s) has no data on season %s.',
-          stock.code(), stock.name(), self._insight_date.isoformat())
+          stock.code(), stock.name(), self._insight_season.isoformat())
 
     metrics_column_name = u'指标'.encode('UTF8')
     metrics_functions = {
@@ -90,7 +91,7 @@ class DataInsights(object):
     insight_data = InsightData()
     insight_data.AddColumns(['Code', 'Name', 'Industry', 'IPO', 'Season'])
     insight_data.UpdateData({
-        'Season': self._insight_date.isoformat(),
+        'Season': self._insight_season.isoformat(),
         'Code': stock.code(),
         'Name': stock.name(),
         'Industry': stock.industry(),
@@ -129,10 +130,10 @@ class DataInsights(object):
     insight = InsightData()
     insight.AddColumns(['MarketValue_at_season'])
 
-    season_index = self._GetInsightDateIndex(seasonal_data)
+    season_index = self._GetInsightSeasonIndex(seasonal_data)
     if season_index < 0 or seasonal_data[season_index][1] is None:
       logging.info('No market value found for %s(%s) on %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
+          stock.code(), stock.name(), self._insight_season.isoformat())
       return insight
 
     mv = seasonal_data[season_index][1]
@@ -157,10 +158,10 @@ class DataInsights(object):
         '%dseasons_revenue_growth_quantile' % num,
       ])
 
-    season_index = self._GetInsightDateIndex(seasonal_data)
+    season_index = self._GetInsightSeasonIndex(seasonal_data)
     if season_index < 0 or seasonal_data[season_index][1] is None:
       logging.info('No revenue growth found for %s(%s) on %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
+          stock.code(), stock.name(), self._insight_season.isoformat())
       return insight
 
     data_at_season = seasonal_data[season_index][1]
@@ -170,7 +171,7 @@ class DataInsights(object):
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
         logging.info('%s(%s) has no enough data for %d seasons revenue growth CI before %s',
-            stock.code(), stock.name(), num, self._insight_date.isoformat())
+            stock.code(), stock.name(), num, self._insight_season.isoformat())
       else:
         # CI by the previous seasons data
         (mean, lower, upper, quantile) = self._PastAverageAndPercentInPast(
@@ -198,10 +199,10 @@ class DataInsights(object):
         '%dseasons_PE_quantile' % num,
       ])
 
-    season_index = self._GetInsightDateIndex(seasonal_data)
+    season_index = self._GetInsightSeasonIndex(seasonal_data)
     if season_index < 0 or seasonal_data[season_index][1] is None:
       logging.info('No PE found for %s(%s) on %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
+          stock.code(), stock.name(), self._insight_season.isoformat())
       return insight
 
     data_at_season = seasonal_data[season_index][1]
@@ -211,7 +212,7 @@ class DataInsights(object):
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
         logging.info('%s(%s) has no enough data for %d seasons PE CI before %s',
-            stock.code(), stock.name(), num, self._insight_date.isoformat())
+            stock.code(), stock.name(), num, self._insight_season.isoformat())
       else:
         # CI by previous seasons data
         (mean, lower, upper, quantile) = self._PastAverageAndPercentInPast(
@@ -239,10 +240,10 @@ class DataInsights(object):
         '%dseasons_PB_quantile' % num,
       ])
 
-    season_index = self._GetInsightDateIndex(seasonal_data)
+    season_index = self._GetInsightSeasonIndex(seasonal_data)
     if season_index < 0 or seasonal_data[season_index][1] is None:
       logging.info('No PB found for %s(%s) on %s',
-          stock.code(), stock.name(), self._insight_date.isoformat())
+          stock.code(), stock.name(), self._insight_season.isoformat())
       return insight
 
     data_at_season = seasonal_data[season_index][1]
@@ -252,7 +253,7 @@ class DataInsights(object):
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
       if len(previous_seasons) < num:
         logging.info('%s(%s) has no enough data for %d seasons PB CI before %s',
-            stock.code(), stock.name(), num, self._insight_date.isoformat())
+            stock.code(), stock.name(), num, self._insight_season.isoformat())
       else:
         # CI by previous seasons data
         (mean, lower, upper, quantile) = self._PastAverageAndPercentInPast(
@@ -292,10 +293,11 @@ class DataInsights(object):
     quantile = stats.t.cdf(point, size - 1) * 100.0
     return (mean, lower, upper, quantile)
 
-  def _GetInsightDateIndex(self, seasons):
+  def _GetInsightSeasonIndex(self, seasons):
     if len(seasons) == 0:
       return -1
-    insight_season = self._insight_date.isoformat()
+    # Season string format YYYY-MM-DD.
+    insight_season = self._insight_season.isoformat()
     # assume seasons are in descending order.
     start = 0
     end = len(seasons) - 1

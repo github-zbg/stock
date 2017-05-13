@@ -15,11 +15,21 @@ import date_util
 import stock_info
 
 FLAGS = flags.FLAGS
-flags.ArgParser().add_argument('--skip_fetching_raw_data', default=False, action='store_true',
+flags.ArgParser().add_argument(
+    '--skip_fetching_raw_data',
+    default=False, action='store_true',
     help='If set, totally skip fetching raw data from data sources.')
-flags.ArgParser().add_argument('--force_refetch', default=False, action='store_true',
+flags.ArgParser().add_argument(
+    '--force_refetch',
+    default=False, action='store_true',
     help='If set, always refetch the raw data even if it already exists.')
-flags.ArgParser().add_argument('--force_refine', default=False, action='store_true',
+flags.ArgParser().add_argument(
+    '--refetch_price',
+    default=False, action='store_true',
+    help='If set, always refetch the price data even if it already exists.')
+flags.ArgParser().add_argument(
+    '--force_refine',
+    default=False, action='store_true',
     help='If set, always refine the raw data even if the result already exists.')
 
 Stock = stock_info.Stock
@@ -75,6 +85,7 @@ class NeteaseFetcher(DataFetcher):
     self._RefineData(stock)
 
   def _FetchFromSources(self, stock, data_sources):
+    """ Fetch raw data from data sources."""
     logging.info('Fetching %s(%s) ...', stock.code(), stock.name())
     for page_name in self._data_pages:
       page_url = data_sources.get(page_name)
@@ -84,7 +95,11 @@ class NeteaseFetcher(DataFetcher):
   def _FetchUrl(self, stock, page_name, page_url):
     filename = '%s.%s.csv' % (stock.code(), page_name)
     full_filepath = os.path.join(self._directory, filename)
-    if not FLAGS.force_refetch and os.path.exists(full_filepath):
+
+    # check if we want to skip the fetch.
+    if (not FLAGS.force_refetch
+        and (page_name != 'price_history' or not FLAGS.refetch_price)
+        and os.path.exists(full_filepath)):
       logging.info('%s exists. Skip fetching %s for %s(%s)',
           full_filepath, page_name, stock.code(), stock.name())
       return
@@ -107,6 +122,7 @@ class NeteaseFetcher(DataFetcher):
     f.close()
 
   def _RefineData(self, stock):
+    """ Calculate some derived data."""
     refine_output = os.path.join(self._directory, '%s.refined.csv' % stock.code())
     if not FLAGS.force_refine and os.path.exists(refine_output):
       logging.info('%s exists. Skip refining %s(%s)',
@@ -121,6 +137,7 @@ class NeteaseFetcher(DataFetcher):
     # {metrics_name -> {seasons_end -> value} }
     refined_metrics_data = {}
 
+    # for these metrics we calculate YoY growth.
     metrics_names_for_growth = [
         u'主营业务收入(万元)@main_metrics'.encode('UTF8'),
         u'基本每股收益(元)@main_metrics'.encode('UTF8'),
@@ -319,10 +336,11 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
     """
     max_seasons = 12 * 4  # limit to the latest 12 years
     return [date_util.GetLastDay(d)
-        for d in date_util.GetLastNSeasonsStart(datetime.date.today(), max_seasons)]
+        for d in date_util.GetLatestNSeasonsStart(datetime.date.today(), max_seasons)]
 
   def _SetupDataSources(self, stock):
-    price_end_date = self._reporting_seasons[0].strftime('%Y%m%d')
+    # Always get the latest price.
+    price_end_date = datetime.date.today().strftime('%Y%m%d')
     # The earliest reporting season is reporting_seasons[-1].
     # So we need the price since that season's start date.
     price_start_date = date_util.GetSeasonStartDate(self._reporting_seasons[-1]).strftime('%Y%m%d')
@@ -332,7 +350,7 @@ class NeteaseSeasonFetcher(NeteaseFetcher):
         'balance': ('http://quotes.money.163.com/service/zcfzb_%s.html' % stock.code()),
         'income': ('http://quotes.money.163.com/service/lrb_%s.html' % stock.code()),
         'cash': ('http://quotes.money.163.com/service/xjllb_%s.html' % stock.code()),
-        # the 'report' type is seasonal data
+        # the 'type=report' means seasonal data
         'main_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report' % stock.code()),
         'profit_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=ylnl' % stock.code()),
         'liability_metrics': ('http://quotes.money.163.com/service/zycwzb_%s.html?type=report&part=chnl' % stock.code()),
