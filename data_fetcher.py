@@ -175,8 +175,9 @@ class NeteaseFetcher(DataFetcher):
 
     # write csv
     metrics_column = u'指标'.encode('UTF8')
+    latest_day = datetime.date.today().isoformat()
     # the columns are in this order.
-    header = [metrics_column] + seasons_in_string
+    header = [metrics_column, latest_day] + seasons_in_string
     writer = csv.DictWriter(open(refine_output, 'w'), fieldnames=header)
     writer.writeheader()
     for metrics_name, values in refined_metrics_data.iteritems():
@@ -185,65 +186,113 @@ class NeteaseFetcher(DataFetcher):
       writer.writerow(row)
 
   def _CalculatePeFromEps(self, stock, refined_metrics_data):
-    seasonal_pe = {}
     price_column = u'收盘价'.encode('GBK')
     price_history = self._LoadAllPrices(stock, price_column)
+
+    # also calculate PE for the latest day.
+    latest_day = datetime.date.today()
+    seasons_to_report = self._reporting_seasons + [datetime.date.today()]
     seasonal_price = self._GetSeasonalAveragePrice(price_history, self._reporting_seasons)
-    seasonal_eps = refined_metrics_data.get(u'基本每股收益(元)'.encode('UTF8'))
-    for season in self._reporting_seasons:
-      season_string = season.isoformat()
-      price = seasonal_price.get(season_string)
-      eps = seasonal_eps.get(season_string)
-      # how to convert seasonal eps to annual eps
-      multiplier = {3: 4.0, 6: 2.0, 9: 4.0 / 3.0, 12: 1.0}
-      if eps is not None and eps > 1e-4:
-        eps *= multiplier[season.month]
-      elif eps is not None:
-        eps = 1e-4  # negative or 0 eps
-      pe = price / eps if price and eps else None
-      seasonal_pe[season_string] = pe
+    seasonal_price[latest_day.isoformat()] = self._GetPriceOnDay(price_history, latest_day)
+    seasonal_eps = self._GetSeasonalMetrics(
+        refined_metrics_data.get(u'基本每股收益(元)'.encode('UTF8')),
+        seasons_to_report,
+        convert_to_annual=True)
+    seasonal_pe = {}
+    for day in seasons_to_report:
+      day_string = day.isoformat()
+      price = seasonal_price.get(day_string)
+      eps = seasonal_eps.get(day_string)
+      if eps:
+        eps = max(eps, 1e-4)  # for negative and 0 cases
+      pe = price / eps if (price and eps) else None
+      if pe:
+        pe = min(pe, 2000)  # cap PE to 2000
+      seasonal_pe[day_string] = pe
     return seasonal_pe
 
   def _CalculatePeFromMarketValue(self, stock, refined_metrics_data):
-    seasonal_pe = {}
     price_column = u'总市值'.encode('GBK')
     mv_history = self._LoadAllPrices(stock, price_column)
+
+    # also calculate PE for the latest day.
+    latest_day = datetime.date.today()
+    seasons_to_report = self._reporting_seasons + [datetime.date.today()]
     seasonal_mv = self._GetSeasonalAveragePrice(mv_history, self._reporting_seasons)
-    seasonal_income = refined_metrics_data.get(u'净利润(万元)'.encode('UTF8'))
-    for season in self._reporting_seasons:
-      season_string = season.isoformat()
-      price = seasonal_mv.get(season_string)
-      eps = seasonal_income.get(season_string)  # note that the unit is 10K
-      # how to convert seasonal eps to annual eps
-      multiplier = {3: 4.0, 6: 2.0, 9: 4.0 / 3.0, 12: 1.0}
-      if eps is not None and eps > 1e-4:
-        eps *= multiplier[season.month]
-      elif eps is not None:
-        eps = 1e-4  # negative or 0 eps
-      pe = price / 10000.0 / eps if price and eps else None
-      if pe is not None:
+    seasonal_mv[latest_day.isoformat()] = self._GetPriceOnDay(mv_history, latest_day)
+    seasonal_income = self._GetSeasonalMetrics(
+        refined_metrics_data.get(u'净利润(万元)'.encode('UTF8')),
+        seasons_to_report,
+        convert_to_annual=True)
+    seasonal_pe = {}
+    for day in seasons_to_report:
+      day_string = day.isoformat()
+      price = seasonal_mv.get(day_string)
+      eps = seasonal_income.get(day_string)  # note that the unit is 10K
+      if eps:
+        eps = max(eps, 1e-4)  # for negative and 0 cases
+      pe = price / 10000.0 / eps if (price and eps) else None
+      if pe:
         pe = min(pe, 2000)  # cap PE to 2000
-      seasonal_pe[season_string] = pe
+      seasonal_pe[day_string] = pe
     return seasonal_pe
 
   def _CalculatePbFromMarketValue(self, stock, refined_metrics_data):
-    seasonal_pb = {}
     price_column = u'总市值'.encode('GBK')
     mv_history = self._LoadAllPrices(stock, price_column)
-    seasonal_mv = self._GetSeasonalAveragePrice(mv_history, self._reporting_seasons)
-    seasonal_net_asset = refined_metrics_data.get(u'股东权益不含少数股东权益(万元)'.encode('UTF8'))
-    for season in self._reporting_seasons:
-      season_string = season.isoformat()
-      price = seasonal_mv.get(season_string)
-      asset = seasonal_net_asset.get(season_string)  # note that the unit is 10K
-      if asset is not None and asset <= 1e-4:
-        asset = 1.0  # negative or 0 asset
 
-      pb = price / 10000.0 / asset if price and asset else None
-      if pb is not None:
+    # also calculate PE for the latest day.
+    latest_day = datetime.date.today()
+    seasons_to_report = self._reporting_seasons + [datetime.date.today()]
+    seasonal_mv = self._GetSeasonalAveragePrice(mv_history, self._reporting_seasons)
+    seasonal_mv[latest_day.isoformat()] = self._GetPriceOnDay(mv_history, latest_day)
+    seasonal_net_asset = self._GetSeasonalMetrics(
+        refined_metrics_data.get(u'股东权益不含少数股东权益(万元)'.encode('UTF8')),
+        seasons_to_report)
+    seasonal_pb = {}
+    for day in seasons_to_report:
+      day_string = day.isoformat()
+      price = seasonal_mv.get(day_string)
+      asset = seasonal_net_asset.get(day_string)  # note that the unit is 10K
+      if asset:
+        asset = max(asset, 1.0)  # negative or 0 asset
+
+      pb = price / 10000.0 / asset if (price and asset) else None
+      if pb:
         pb = min(pb, 2000)  # cap PB to 2000
-      seasonal_pb[season_string] = pb
+      seasonal_pb[day_string] = pb
     return seasonal_pb
+
+  def _GetSeasonalMetrics(self, per_season_metrics, season_days, convert_to_annual=False):
+    """ Returns a map of {season_day_string -> metrics}.
+
+    Args:
+      per_season_metrics: a map of {season_day_string -> metrics} from
+      reporting data.
+      season_days: a list of dates. If a date does not appear in
+      per_season_metrics, use the metrics from the previous season of that
+      date.
+    Returns:
+      {season_day_string -> metrics}
+    """
+    # How to convert seasonal data to annual data, E.g. for eps.
+    multiplier = {3: 4.0, 6: 2.0, 9: 4.0 / 3.0, 12: 1.0}
+    seasonal_metrics = {}
+    for day in season_days:
+      metrics = per_season_metrics.get(day.isoformat())
+      metrics_month = day.month
+      n = 0
+      while not metrics and n <= 2:
+        # no metrics for that day, use the previous season
+        previous_season = date_util.GetLastSeasonEndDate(day)
+        metrics = per_season_metrics.get(previous_season.isoformat())
+        metrics_month = previous_season.month
+        n += 1
+
+      if convert_to_annual and metrics:
+        metrics *= multiplier[metrics_month]
+      seasonal_metrics[day.isoformat()] = metrics
+    return seasonal_metrics
 
   def _GetSeasonalMarketValue(self, stock):
     """ Retuns {season -> market value}. """
@@ -255,6 +304,10 @@ class NeteaseFetcher(DataFetcher):
       for season in self._reporting_seasons:
         mv = self._GetPriceOnDay(mv_history, season, earliest_day)
         seasonal_mv[season.isoformat()] = mv
+      # Always get the latest market value.
+      today = datetime.date.today()
+      latest_mv = self._GetPriceOnDay(mv_history, today, earliest_day)
+      seasonal_mv[today.isoformat()] = latest_mv
     return seasonal_mv
 
   def _LoadFullRawData(self, stock, seasons_end):
@@ -315,10 +368,12 @@ class NeteaseFetcher(DataFetcher):
       seasonal_price[season_end.isoformat()] = (sum(prices) / len(prices) if len(prices) else None)
     return seasonal_price
 
-  def _GetPriceOnDay(self, all_prices, day, earliest_day):
-    """ Returns the market price on a specific day. Returns the price of previous days
-    if the stock does not trade on that day.
+  def _GetPriceOnDay(self, all_prices, day, earliest_day=None):
+    """ Returns the market price on a specific day. Use the price of previous
+    days if the stock does not trade on that day.
     """
+    if not earliest_day:
+      earliest_day = min(all_prices.keys())
     p = all_prices.get(day.isoformat(), 0.0)
     while p <= 1e-6 and day.isoformat() > earliest_day:
       day -= datetime.timedelta(days=1)  # the previous day
