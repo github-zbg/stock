@@ -21,8 +21,8 @@ Stock = stock_info.Stock
 
 FLAGS = flags.FLAGS
 flags.ArgParser().add_argument(
-    '--insight_date',
-    help='The date to do insights: YYYY-mm-dd')
+    '--insight_season',
+    help='The season to do insights: YYYY-03-31, YYYY-06-30, YYYY-09-30, YYYY-12-31')
 
 
 class InsightData(object):
@@ -59,11 +59,10 @@ class InsightData(object):
 class DataInsights(object):
   def __init__(self, directory):
     self._directory = directory
-    # parse and check the insight date.
-    self._insight_date = datetime.date.today()
-    if FLAGS.insight_date:
-      self._insight_date = datetime.datetime.strptime(FLAGS.insight_date, '%Y-%m-%d').date()
-    self._insight_season = date_util.GetLastSeasonEndDate(self._insight_date)
+    # parse and check the insight season.
+    self._insight_season = date_util.GetLastSeasonEndDate(datetime.date.today())
+    if FLAGS.insight_season:
+      self._insight_season = datetime.datetime.strptime(FLAGS.insight_season, '%Y-%m-%d').date()
 
   # Calculate statistical insights
   def DoStats(self, stock):
@@ -73,7 +72,8 @@ class DataInsights(object):
     datafile = os.path.join(self._directory, '%s.refined.csv' % stock.code())
     reader = csv.DictReader(open(datafile))
 
-    seasons = list(reader.fieldnames)[1:]  # keep only the dates
+    # column[1] is the latest day, columns[2:] are the seasons.
+    seasons = list(reader.fieldnames)[1:]
     seasons.sort(reverse=True)  # the latest season first
     if self._insight_season.isoformat() not in seasons:
       logging.warning('%s(%s) has no data on season %s.',
@@ -128,7 +128,7 @@ class DataInsights(object):
     """ seasonal_data is list of (season, value), value could be None.
     """
     insight = InsightData()
-    insight.AddColumns(['MarketValue_at_season'])
+    insight.AddColumns(['MarketValue_latest', 'MarketValue_at_season'])
 
     season_index = self._GetInsightSeasonIndex(seasonal_data)
     if season_index < 0 or seasonal_data[season_index][1] is None:
@@ -136,12 +136,21 @@ class DataInsights(object):
           stock.code(), stock.name(), self._insight_season.isoformat())
       return insight
 
-    mv = seasonal_data[season_index][1]
-    if mv >= 1e8:
-      mv = '%.1f亿' % (mv / 1e8)
-    else:
-      mv = '%.1f万' % (mv / 1e4)
-    insight.UpdateData({'MarketValue_at_season': mv})
+    def ConvertMV(mv):
+      if not mv:
+        return None
+      if mv >= 1e8:
+        mv = '%.1f亿' % (mv / 1e8)
+      else:
+        mv = '%.1f万' % (mv / 1e4)
+      return mv
+
+    season_mv = ConvertMV(seasonal_data[season_index][1])
+    latest_mv = ConvertMV(seasonal_data[0][1])
+    insight.UpdateData({
+      'MarketValue_latest': latest_mv,
+      'MarketValue_at_season': season_mv,
+    })
     return insight
 
   def _DoRevenueGrowthStats(self, stock, seasonal_data):
@@ -189,7 +198,7 @@ class DataInsights(object):
     """ seasonal_data is list of (season, value)
     """
     insight = InsightData()
-    insight.AddColumns(['PE_at_season'])
+    insight.AddColumns(['PE_latest', 'PE_at_season'])
     periods_configs = [12]  # number of pervious seasons to consider
     for num in periods_configs:
       insight.AddColumns([
@@ -205,8 +214,12 @@ class DataInsights(object):
           stock.code(), stock.name(), self._insight_season.isoformat())
       return insight
 
-    data_at_season = seasonal_data[season_index][1]
-    insight.UpdateData({'PE_at_season': round(data_at_season, 1)})
+    pe_at_season = seasonal_data[season_index][1]
+    pe_latest = seasonal_data[0][1]
+    insight.UpdateData({
+      'PE_latest': round(pe_latest, 1),
+      'PE_at_season': round(pe_at_season, 1),
+    })
 
     for num in periods_configs:
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
@@ -216,7 +229,7 @@ class DataInsights(object):
       else:
         # CI by previous seasons data
         (mean, lower, upper, quantile) = self._PastAverageAndPercentInPast(
-            data_at_season, previous_seasons)
+            pe_at_season, previous_seasons)
         insight.UpdateData({
           '%dseasons_PE_mean' % num: round(mean, 1),
           '%dseasons_PE_lower' % num: round(lower, 1),
@@ -230,7 +243,7 @@ class DataInsights(object):
     """ seasonal_data is list of (season, value)
     """
     insight = InsightData()
-    insight.AddColumns(['PB_at_season'])
+    insight.AddColumns(['PB_latest', 'PB_at_season'])
     periods_configs = [12]  # number of pervious seasons to consider
     for num in periods_configs:
       insight.AddColumns([
@@ -246,8 +259,12 @@ class DataInsights(object):
           stock.code(), stock.name(), self._insight_season.isoformat())
       return insight
 
-    data_at_season = seasonal_data[season_index][1]
-    insight.UpdateData({'PB_at_season': round(data_at_season, 1)})
+    pb_at_season = seasonal_data[season_index][1]
+    pb_latest = seasonal_data[0][1]
+    insight.UpdateData({
+      'PB_latest': round(pb_latest, 1),
+      'PB_at_season': round(pb_at_season, 1),
+    })
 
     for num in periods_configs:
       previous_seasons = [v[1] for v in seasonal_data[season_index + 1 : season_index + 1 + num] if v[1]]
@@ -257,7 +274,7 @@ class DataInsights(object):
       else:
         # CI by previous seasons data
         (mean, lower, upper, quantile) = self._PastAverageAndPercentInPast(
-            data_at_season, previous_seasons)
+            pb_at_season, previous_seasons)
         insight.UpdateData({
           '%dseasons_PB_mean' % num: round(mean, 1),
           '%dseasons_PB_lower' % num: round(lower, 1),
