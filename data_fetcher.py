@@ -16,10 +16,6 @@ import stock_info
 
 FLAGS = flags.FLAGS
 flags.ArgParser().add_argument(
-    '--skip_fetching_raw_data',
-    default=False, action='store_true',
-    help='If set, totally skip fetching raw data from data sources.')
-flags.ArgParser().add_argument(
     '--force_refetch',
     default=False, action='store_true',
     help='If set, always refetch the raw data even if it already exists.')
@@ -79,8 +75,7 @@ class NeteaseFetcher(DataFetcher):
     # setup the sources of a certain stock
     data_sources = self._SetupDataSources(stock)
     # fetch the raw data
-    if not FLAGS.skip_fetching_raw_data:
-      self._FetchFromSources(stock, data_sources)
+    self._FetchFromSources(stock, data_sources)
     # process and calculate some derived data
     self._RefineData(stock)
 
@@ -372,13 +367,16 @@ class NeteaseFetcher(DataFetcher):
     """ Returns the market price on a specific day. Use the price of previous
     days if the stock does not trade on that day.
     """
+    if len(all_prices) == 0:
+      return None
+
     if not earliest_day:
       earliest_day = min(all_prices.keys())
     p = all_prices.get(day.isoformat(), 0.0)
     while p <= 1e-6 and day.isoformat() > earliest_day:
       day -= datetime.timedelta(days=1)  # the previous day
       p = all_prices.get(day.isoformat(), 0.0)
-    return p if p > 1e-6 else 0.0
+    return p if p > 1e-6 else None
 
 
 # Netease per season data fetcher
@@ -424,7 +422,8 @@ def main():
   logging.basicConfig(level=logging.INFO)
   directory = './data/test'
   # stock = Stock('600789', '鲁抗医药', '医药', '2001-01-01')
-  stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
+  # stock = Stock('000977', '浪潮信息', '医药', '2001-01-01')
+  stock = Stock('300652', 'N雷迪克', '制造业', '2017-05-16')
   # stock = Stock('300039', '上海凯宝', '医药', '2011-01-01')
   # stock = Stock('000621', '*ST比特', 'Unknown', '2011-01-01')
   fetcher = NeteaseSeasonFetcher(directory)

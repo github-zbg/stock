@@ -38,10 +38,10 @@ class Stock(object):
 def LoadAllStocks():
   """ Returns a map of {code -> Stock}.
   """
-  code_column = u'A股代码'.encode('GBK')
-  name_column = u'A股简称'.encode('GBK')
-  industry_column = u'2012年行业名称'.encode('GBK')
-  ipo_date_column = u'上市日期'.encode('GBK')
+  code_column = u'A股代码'.encode('utf8')
+  name_column = u'A股简称'.encode('utf8')
+  industry_column = u'2012年行业名称'.encode('utf8')
+  ipo_date_column = u'上市日期'.encode('utf8')
   all_stocks = {}
   for stock_file in FLAGS.stock_list.split(','):
     stock_file = stock_file.strip()
@@ -54,10 +54,10 @@ def LoadAllStocks():
       name = row.get(name_column, '')
       industry = row.get(industry_column, '')
       ipo_date = row.get(ipo_date_column, '')
-      code = code.strip().decode('GBK').encode('UTF8')
-      name = name.strip().decode('GBK').encode('UTF8')
-      industry = industry.strip().decode('GBK').encode('UTF8')
-      ipo_date = ipo_date.strip().decode('GBK').encode('UTF8')
+      code = code.strip()
+      name = name.replace(' ', '')
+      industry = industry.strip()
+      ipo_date = ipo_date.strip()
       if not code or not name:
         continue
       # logging.info('stock: "%s", name: "%s"', code, name)
