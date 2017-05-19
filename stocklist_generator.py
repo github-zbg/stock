@@ -7,6 +7,7 @@ import argparse
 import csv
 import datetime
 import logging
+import os
 import sys
 
 import flags
@@ -17,12 +18,16 @@ flags.ArgParser().add_argument(
     default='data/stocklist_shanghai.csv,data/stocklist_shenzhen.csv',
     help='The input csv files to generate the final stocklist.')
 flags.ArgParser().add_argument(
-    '--output_csv',
-    default='data/stocklist_full.csv',
-    help='The output csv.')
+    '--portfolio_list',
+    default='data/portfolio.csv',
+    help='The input portfolio csv.')
+flags.ArgParser().add_argument(
+    '--output_directory',
+    default='data',
+    help='The directory to output stocklist csv.')
 
 
-def Generate(input_csv_list, output_csv):
+def Generate(input_csv_list, output_directory):
   # The mapping from input column to output column
   mapping = {
       u'A股代码'.encode('gbk'): u'A股代码'.encode('utf8'),
@@ -44,6 +49,7 @@ def Generate(input_csv_list, output_csv):
       if output:
         output_rows.append(output)
   # output
+  output_csv = os.path.join(output_directory, 'stocklist_full.csv')
   logging.info('Writing %s with %d stocks', output_csv, len(output_rows))
   header = [
       u'A股代码'.encode('utf8'),
@@ -55,6 +61,24 @@ def Generate(input_csv_list, output_csv):
   writer.writeheader()
   writer.writerows(output_rows)
 
+  if FLAGS.portfolio_list:
+    portfolio_list = LoadPortfolio(FLAGS.portfolio_list)
+    portfolio_csv = os.path.join(output_directory, 'stocklist_portfolio.csv')
+    logging.info('Writing %s with %d stocks', portfolio_csv, len(portfolio_list))
+    writer = csv.DictWriter(open(portfolio_csv, 'w'), fieldnames=header)
+    writer.writeheader()
+    writer.writerows([row for row in output_rows if row[u'A股代码'.encode('utf8')] in portfolio_list])
+
+
+def LoadPortfolio(portfolio_list):
+  reader = csv.reader(open(portfolio_list))
+  portfolio_list = []
+  for row in reader:
+    code = row[0].split('#', 1)[0].strip()
+    if code:
+      portfolio_list.append(code)
+  return portfolio_list
+
 
 def main():
   # Parse command line flags into FLAGS.
@@ -63,12 +87,12 @@ def main():
   logging.basicConfig(level=logging.INFO)
 
   input_csv = FLAGS.input_csv.split(',')
-  output_csv = FLAGS.output_csv
+  output_directory = FLAGS.output_directory
 
-  if not input_csv or not output_csv:
-    logging.fatal('--input_csv and --output_csv are required.')
+  if not input_csv or not output_directory:
+    logging.fatal('--input_csv and --output_directory are required.')
 
-  Generate(input_csv, output_csv)
+  Generate(input_csv, output_directory)
 
 if __name__ == "__main__":
   main()
